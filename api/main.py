@@ -1,7 +1,6 @@
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.templating import Jinja2Templates
 from fastapi.responses import HTMLResponse
-from websockets.exceptions import ConnectionClosed
 import os
 import logging
 import cv2
