@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>YOLOv11 Dog Posture Detection</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #f8f9fa;
+            color: #333;
+            margin: 0;
+            padding: 0;
+            text-align: center;
+        }
+
+        header {
+            background-color: #343a40;
+            color: white;
+            padding: 1rem 0;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        h1 {
+            margin: 0;
+            font-size: 2rem;
+        }
+
+        .container {
+            max-width: 900px;
+            margin: 2rem auto;
+            padding: 0 1rem;
+        }
+
+        .upload-form {
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+        }
+
+        form {
+            background: white;
+            padding: 1rem;
+            border-radius: 8px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.05);
+        }
+
+        input[type="file"] {
+            margin-bottom: 0.5rem;
+        }
+
+        button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 0.6rem 1.2rem;
+            font-size: 1rem;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background 0.3s ease;
+        }
+
+        button:hover {
+            background-color: #0056b3;
+        }
+
+        #videoFeed {
+            max-width: 100%;
+            width: 100%;
+            border-radius: 8px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        }
+
+        .stream-controls {
+            margin: 1rem 0;
+        }
+
+        #videoDownloadSection {
+            margin-top: 1rem;
+            display: none;
+        }
+
+        #videoDownloadLink {
+            display: inline-block;
+            padding: 0.5rem 1rem;
+            background-color: #28a745;
+            color: white;
+            border-radius: 5px;
+            text-decoration: none;
+            font-weight: bold;
+        }
+
+        #videoDownloadLink:hover {
+            background-color: #218838;
+        }
+
+        @media (max-width: 600px) {
+            button {
+                width: 100%;
+            }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>YOLOv11 Dog Posture Detection</h1>
+    </header>
+
+    <div class="container">
+        <section class="upload-form">
+            <form id="imageForm" action="/yolo/predict" method="post" enctype="multipart/form-data">
+                <h2>Upload an Image</h2>
+                <input type="file" name="file" accept="image/*" required>
+                <button type="submit">Upload Image</button>
+            </form>
+
+            <form id="videoForm">
+                <h2>Upload a Video</h2>
+                <input type="file" name="file" accept="video/*" required>
+                <button type="submit">Upload Video</button>
+            </form>
+
+            <div id="videoDownloadSection">
+                <a id="videoDownloadLink" href="#" download="video_annotated.mp4">📥 Télécharger la vidéo annotée</a>
+            </div>
+        </section>
+
+        <section>
+            <h2>Live Detection Stream</h2>
+            <div class="stream-controls">
+                <button id="startStreamBtn">Activer le Live Stream</button>
+                <button id="stopStreamBtn">Désactiver le Live Stream</button>
+            </div>
+            <img id="videoFeed" src="" alt="Live stream from camera (WebSocket)">
+        </section>
+    </div>
+
+    <script>
+        let ws = null;
+        const videoFeed = document.getElementById('videoFeed');
+        const startStreamBtn = document.getElementById('startStreamBtn');
+        const stopStreamBtn = document.getElementById('stopStreamBtn');
+
+        function initializeWebSocket() {
+            if (!ws || ws.readyState === WebSocket.CLOSED) {
+                ws = new WebSocket(`ws://${window.location.host}/yolo/ws`);
+                ws.onmessage = function(event) {
+                    if (event.data instanceof Blob) {
+                        const blob = event.data;
+                        const url = URL.createObjectURL(blob);
+                        videoFeed.src = url;
+                        setTimeout(() => URL.revokeObjectURL(url), 100);
+                    } else if (typeof event.data === 'string') {
+                        console.log("Serveur : " + event.data);
+                    }
+                };
+
+                ws.onclose = function() {
+                    console.log("WebSocket connection closed");
+                    ws = null;
+                };
+
+                ws.onerror = function(error) {
+                    console.error("WebSocket error: ", error);
+                };
+            }
+        }
+
+        startStreamBtn.addEventListener('click', async () => {
+            try {
+                const response = await fetch('/yolo/start-stream', { method: 'POST' });
+                const data = await response.json();
+                if (data.message) {
+                    alert(data.message);
+                    if (data.message === "Streaming activé" && !ws) {
+                        initializeWebSocket();
+                    }
+                } else {
+                    alert("Erreur : Réponse inattendue du serveur");
+                }
+            } catch (error) {
+                alert("Erreur lors de l'activation du stream : " + error.message);
+            }
+        });
+
+        stopStreamBtn.addEventListener('click', async () => {
+            try {
+                const response = await fetch('/yolo/stop-stream', { method: 'POST' });
+                const data = await response.json();
+                if (data.message) {
+                    alert(data.message);
+                    if (data.message === "Streaming arrêté" && ws) {
+                        ws.close();
+                    }
+                } else {
+                    alert("Erreur : Réponse inattendue du serveur");
+                }
+            } catch (error) {
+                alert("Erreur lors de la désactivation du stream : " + error.message);
+            }
+        });
+
+        // Formulaire vidéo
+        const videoForm = document.getElementById('videoForm');
+        const videoDownloadSection = document.getElementById('videoDownloadSection');
+        const videoDownloadLink = document.getElementById('videoDownloadLink');
+
+        videoForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const formData = new FormData(videoForm);
+
+            try {
+                const response = await fetch('/yolo/predict-video', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (!response.ok) {
+                    throw new Error('Échec du traitement de la vidéo.');
+                }
+
+                const blob = await response.blob();
+                const url = URL.createObjectURL(blob);
+                videoDownloadLink.href = url;
+                videoDownloadSection.style.display = 'block';
+            } catch (error) {
+                alert("Erreur lors de l’envoi de la vidéo : " + error.message);
+            }
+        });
+    </script>
+</body>
+</html>
