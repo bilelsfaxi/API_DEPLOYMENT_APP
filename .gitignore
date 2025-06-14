@@ -1,0 +1,26 @@
+# Caches
+__pycache__/
+*.py[cod]
+*.so
+
+# Environnement Python
+.env
+.venv/
+.Python
+
+temp_results/
+*.mp4
+*.avi
+*.mov
+
+# Logs
+*.log
+
+
+# Dossier à ignorer (si temporaire ou sensible)
+API_DEPLOYMENT/
+
+# OS / IDE spécifiques
+.DS_Store
+.vscode/
+.idea/

@@ -1,0 +1,39 @@
+# Environnements virtuels
+API_DEPLOYMENT/
+venv/
+.env
+
+# Fichiers de cache Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Fichiers temporaires et logs
+*.log
+*.tmp
+temp/
+
+# Fichiers locaux et OS spécifiques
+.DS_Store
+Thumbs.db
+
+# Fichiers de configuration d'IDE
+.vscode/
+.idea/
+
+# Dépôts Git
+.git/
+.gitignore
+
+# Documentation et fichiers non nécessaires
+README.md
+LICENSE
+*.md
+
+# Modèles locaux (puisqu'ils sont téléchargés dynamiquement)
+*.pt
+
+
+# Exclure les caches spécifiques dans api/
+api/__pycache__/
