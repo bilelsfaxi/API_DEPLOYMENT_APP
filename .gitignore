@@ -8,8 +8,7 @@ __pycache__/
 .venv/
 .Python
 # Temporary uploads
-uploads/*
-!uploads/.gitkeep
+
 temp_results/*
 !temp_results/.gitkeep
 
