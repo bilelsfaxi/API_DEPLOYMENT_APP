@@ -57,8 +57,6 @@ class YOLOv11Detector:
     def process_video(self, video_path: str, output_path: str) -> List[Dict]:
         """
         Traite une vidéo frame par frame et sauvegarde une vidéo annotée.
-        ATTENTION : Cette méthode lit une vidéo depuis un chemin (uploadé par l'utilisateur).
-        Elle ne tente pas d'accéder à une webcam.
         """
         cap = cv2.VideoCapture(video_path)
         if not cap.isOpened():
@@ -66,7 +64,7 @@ class YOLOv11Detector:
 
         width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-        fps = cap.get(cv2.CAP_PROP_FPS) or 25.0  # Valeur par défaut si FPS est 0
+        fps = cap.get(cv2.CAP_PROP_FPS)
 
         fourcc = cv2.VideoWriter_fourcc(*'mp4v')
         out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
