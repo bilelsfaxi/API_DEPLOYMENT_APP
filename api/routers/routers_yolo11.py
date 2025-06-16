@@ -49,27 +49,41 @@ async def predict_video(file: UploadFile = File(...)):
 
     try:
         if detector is None:
-            raise RuntimeError("Modèle non initialisé")
+            raise RuntimeError("Le modèle YOLOv11 n'a pas été initialisé")
 
         contents = await file.read()
         with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as temp_input:
             temp_input.write(contents)
             temp_input_path = temp_input.name
 
-        os.makedirs("temp_results", exist_ok=True)
-        output_path = os.path.join("temp_results", f"video_annotated_{os.path.basename(temp_input_path)}")
-        detector.process_video(temp_input_path, output_path)
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as temp_output:
+            temp_output_path = temp_output.name
+            detector.process_video(temp_input_path, temp_output_path)
+
+        with open(temp_output_path, "rb") as output_file:
+            encoded_video = output_file.read()
 
         os.remove(temp_input_path)
+        os.remove(temp_output_path)
 
-        return FileResponse(
-            path=output_path,
-            filename="video_annotated.mp4",
-            media_type="video/mp4"
-        )
+        return Response(content=encoded_video, media_type="video/mp4")
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Erreur traitement vidéo : {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Erreur lors du traitement de la vidéo : {str(e)}")
+
+
+@router.post("/start-stream")
+async def start_stream():
+    global video_source, streaming_active
+    if not streaming_active:
+        video_source = cv2.VideoCapture(0)
+        if not video_source.isOpened():
+            return JSONResponse(status_code=500, content={"message": "Impossible d'ouvrir la webcam"})
+        streaming_active = True
+        return JSONResponse(content={"message": "Streaming activé"})
+    return JSONResponse(content={"message": "Streaming déjà actif"})
+
+
 
 @router.post("/start-stream")
 async def start_stream():
