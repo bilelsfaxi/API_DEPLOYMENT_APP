@@ -55,9 +55,10 @@ class YOLOv11Detector:
 
         return detections
 
-    def process_video(self, video_path: str, output_path: str) -> List[Dict]:
+    def process_video(self, video_path: str, output_path: str = None) -> Dict:
         """
         Traite une vidéo frame par frame et sauvegarde une vidéo annotée.
+        Retourne un dictionnaire avec les détections et les métadonnées.
         """
         cap = cv2.VideoCapture(video_path)
         if not cap.isOpened():
@@ -66,7 +67,10 @@ class YOLOv11Detector:
         width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         fps = cap.get(cv2.CAP_PROP_FPS)
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        duration = total_frames / fps if fps > 0 else 0
 
+        
         fourcc = cv2.VideoWriter_fourcc(*'mp4v')
         out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
 
@@ -80,23 +84,28 @@ class YOLOv11Detector:
 
             detections = self.process_image(frame)
             all_detections.extend(detections)
-
-            # Annoter frame à nouveau pour la vidéo
+            # Ajouter le numéro de frame et timestamp à chaque détection
             for det in detections:
                 x1, y1, x2, y2 = map(int, det["bbox"])
                 cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
                 label = f"{det['class_name']} {det['confidence']:.2f}"
                 text_y = max(y1 - 10, 20)
                 cv2.putText(frame, label, (x1, text_y), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 0, 0), 2)
-
-            out.write(frame)
+                out.write(frame)
+            
             frame_count += 1
 
         cap.release()
-        out.release()
-        print(f"✅ Vidéo annotée enregistrée dans : {output_path} ({frame_count} frames)")
-        return all_detections
+        if out:
+            out.release()
+            print(f"✅ Vidéo annotée enregistrée dans : {output_path} ({frame_count} frames)")
         
+        return {
+            'detections': all_detections,
+            'total_frames': frame_count,
+            'duration': duration,
+            'fps': fps
+        }
 
     def save_detections_to_csv(self, detections: List[Dict], output_path: str) -> str:
         """
