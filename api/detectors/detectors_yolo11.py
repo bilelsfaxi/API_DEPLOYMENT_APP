@@ -67,13 +67,9 @@ class YOLOv11Detector:
         width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         fps = cap.get(cv2.CAP_PROP_FPS)
-        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-        duration = total_frames / fps if fps > 0 else 0
 
-        out = None
-        if output_path:
-            fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-            out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
+        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+        out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
 
         all_detections = []
         frame_count = 0
@@ -84,30 +80,22 @@ class YOLOv11Detector:
                 break
 
             detections = self.process_image(frame)
-            
-            # Ajouter le numéro de frame et timestamp à chaque détection
+            all_detections.extend(detections)
+
+            # Annoter frame à nouveau pour la vidéo
             for det in detections:
-                det['frame_number'] = frame_count
-                det['timestamp'] = frame_count / fps if fps > 0 else 0
-                all_detections.append(det)
+                x1, y1, x2, y2 = map(int, det["bbox"])
+                cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                label = f"{det['class_name']} {det['confidence']:.2f}"
+                text_y = max(y1 - 10, 20)
+                cv2.putText(frame, label, (x1, text_y), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 0, 0), 2)
 
-            # Annoter frame pour la vidéo si output_path est fourni
-            if output_path and out:
-                for det in detections:
-                    x1, y1, x2, y2 = map(int, det["bbox"])
-                    cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
-                    label = f"{det['class_name']} {det['confidence']:.2f}"
-                    text_y = max(y1 - 10, 20)
-                    cv2.putText(frame, label, (x1, text_y), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 0, 0), 2)
-
-                out.write(frame)
-            
+            out.write(frame)
             frame_count += 1
 
         cap.release()
-        if out:
-            out.release()
-            print(f"✅ Vidéo annotée enregistrée dans : {output_path} ({frame_count} frames)")
+        out.release()
+        print(f"✅ Vidéo annotée enregistrée dans : {output_path} ({frame_count} frames)")
         
         return {
             'detections': all_detections,
@@ -115,6 +103,7 @@ class YOLOv11Detector:
             'duration': duration,
             'fps': fps
         }
+        
 
     def save_detections_to_csv(self, detections: List[Dict], output_path: str) -> str:
         """
