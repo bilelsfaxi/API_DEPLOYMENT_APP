@@ -55,10 +55,9 @@ class YOLOv11Detector:
 
         return detections
 
-    def process_video(self, video_path: str, output_path: str = None) -> Dict:
+    def process_video(self, video_path: str, output_path: str) -> List[Dict]:
         """
         Traite une vidéo frame par frame et sauvegarde une vidéo annotée.
-        Retourne un dictionnaire avec les détections et les métadonnées.
         """
         cap = cv2.VideoCapture(video_path)
         if not cap.isOpened():
@@ -96,13 +95,7 @@ class YOLOv11Detector:
         cap.release()
         out.release()
         print(f"✅ Vidéo annotée enregistrée dans : {output_path} ({frame_count} frames)")
-        
-        return {
-            'detections': all_detections,
-            'total_frames': frame_count,
-            'duration': duration,
-            'fps': fps
-        }
+        return all_detections
         
 
     def save_detections_to_csv(self, detections: List[Dict], output_path: str) -> str:
