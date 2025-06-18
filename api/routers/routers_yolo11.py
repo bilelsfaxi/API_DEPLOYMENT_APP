@@ -1,6 +1,6 @@
-from fastapi import APIRouter, File, UploadFile, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, File, UploadFile, HTTPException, WebSocket, WebSocketDisconnect, Form, Query
 from fastapi.responses import Response, JSONResponse, FileResponse
-from api.schemas.schemas_yolo11 import DetectionResponse
+from api.schemas.schemas_yolo11 import DetectionResponse, VideoDetectionResponse, OutputFormat, Detection
 import os
 import tempfile
 import numpy as np
@@ -8,6 +8,7 @@ from io import BytesIO
 from PIL import Image
 import cv2
 import asyncio
+from typing import Optional
 
 router = APIRouter(prefix="/yolo", tags=["YOLOv11"])
 detector = None
@@ -15,8 +16,14 @@ detector = None
 video_source = None
 streaming_active = False
 
-@router.post("/predict", response_model=DetectionResponse)
-async def predict(file: UploadFile = File(...)):
+@router.post("/predict")
+async def predict(
+    file: UploadFile = File(...),
+    output_format: OutputFormat = Query(OutputFormat.IMAGE, description="Format de sortie: image, json, ou csv")
+):
+    """
+    Prédiction sur une image avec choix du format de sortie
+    """
     if not file.content_type.startswith("image/"):
         raise HTTPException(status_code=400, detail="File must be an image")
 
@@ -28,16 +35,51 @@ async def predict(file: UploadFile = File(...)):
         image = Image.open(BytesIO(contents)).convert("RGB")
         image_np = np.array(image)
 
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as temp_output:
-            temp_output_path = temp_output.name
-            detections = detector.process_image(image_np, temp_output_path)
+        # Traitement de l'image
+        if output_format == OutputFormat.IMAGE:
+            # Mode original - retourne l'image annotée
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as temp_output:
+                temp_output_path = temp_output.name
+                detections = detector.process_image(image_np, temp_output_path)
 
-        with open(temp_output_path, "rb") as annotated_file:
-            encoded_image = annotated_file.read()
+            with open(temp_output_path, "rb") as annotated_file:
+                encoded_image = annotated_file.read()
 
-        os.remove(temp_output_path)
-
-        return Response(content=encoded_image, media_type="image/jpeg")
+            os.remove(temp_output_path)
+            return Response(content=encoded_image, media_type="image/jpeg")
+        
+        else:
+            # Mode JSON ou CSV - retourne les données de détection
+            detections = detector.process_image(image_np)
+            
+            if output_format == OutputFormat.JSON:
+                detection_objects = [
+                    Detection(
+                        class_name=det["class_name"],
+                        confidence=det["confidence"],
+                        bbox=det["bbox"]
+                    ) for det in detections
+                ]
+                
+                response = DetectionResponse(
+                    detections=detection_objects,
+                    total_detections=len(detections)
+                )
+                return response
+            
+            elif output_format == OutputFormat.CSV:
+                # Créer un fichier CSV temporaire
+                os.makedirs("temp_results", exist_ok=True)
+                csv_filename = f"detections_{file.filename.split('.')[0]}.csv"
+                csv_path = os.path.join("temp_results", csv_filename)
+                
+                detector.save_detections_to_csv(detections, csv_path)
+                
+                return FileResponse(
+                    path=csv_path,
+                    filename=csv_filename,
+                    media_type="text/csv"
+                )
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erreur : {str(e)}")
@@ -49,28 +91,31 @@ async def predict_video(file: UploadFile = File(...)):
 
     try:
         if detector is None:
-            raise RuntimeError("Modèle non initialisé")
+            raise RuntimeError("Le modèle YOLOv11 n'a pas été initialisé")
 
         contents = await file.read()
         with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as temp_input:
             temp_input.write(contents)
             temp_input_path = temp_input.name
 
-        os.makedirs("temp_results", exist_ok=True)
-        output_path = os.path.join("temp_results", f"video_annotated_{os.path.basename(temp_input_path)}")
-        detector.process_video(temp_input_path, output_path)
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as temp_output:
+            temp_output_path = temp_output.name
+            detector.process_video(temp_input_path, temp_output_path)
+
+        with open(temp_output_path, "rb") as output_file:
+            encoded_video = output_file.read()
 
         os.remove(temp_input_path)
+        os.remove(temp_output_path)
 
-        return FileResponse(
-            path=output_path,
-            filename="video_annotated.mp4",
-            media_type="video/mp4"
-        )
+        return Response(content=encoded_video, media_type="video/mp4")
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Erreur traitement vidéo : {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Erreur lors du traitement de la vidéo : {str(e)}")
 
+
+
+# Routes existantes inchangées
 @router.post("/start-stream")
 async def start_stream():
     global video_source, streaming_active
