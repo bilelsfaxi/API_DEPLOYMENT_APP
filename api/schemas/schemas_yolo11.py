@@ -1,11 +1,5 @@
 from pydantic import BaseModel
-from typing import List, Optional
-from enum import Enum
-
-class OutputFormat(str, Enum):
-    IMAGE = "image"
-    JSON = "json" 
-    CSV = "csv"
+from typing import List
 
 class Detection(BaseModel):
     class_name: str
@@ -14,10 +8,3 @@ class Detection(BaseModel):
 
 class DetectionResponse(BaseModel):
     detections: List[Detection]
-    total_detections: int
-    
-class VideoDetectionResponse(BaseModel):
-    detections: List[Detection]
-    total_detections: int
-    total_frames: int
-    video_duration: Optional[float] = None
