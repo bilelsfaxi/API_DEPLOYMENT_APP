@@ -41,13 +41,38 @@
 
         form {
             background: white;
-            padding: 1rem;
+            padding: 1.5rem;
             border-radius: 8px;
             box-shadow: 0 0 10px rgba(0,0,0,0.05);
         }
 
-        input[type="file"] {
+        .form-group {
+            margin-bottom: 1rem;
+            text-align: left;
+        }
+
+        .form-group label {
+            display: block;
             margin-bottom: 0.5rem;
+            font-weight: 600;
+            color: #495057;
+        }
+
+        input[type="file"] {
+            width: 100%;
+            padding: 0.5rem;
+            border: 2px dashed #dee2e6;
+            border-radius: 4px;
+            background: #f8f9fa;
+        }
+
+        select {
+            width: 100%;
+            padding: 0.5rem;
+            border: 1px solid #ced4da;
+            border-radius: 4px;
+            background: white;
+            font-size: 1rem;
         }
 
         button {
@@ -59,10 +84,16 @@
             border-radius: 5px;
             cursor: pointer;
             transition: background 0.3s ease;
+            width: 100%;
         }
 
         button:hover {
             background-color: #0056b3;
+        }
+
+        button:disabled {
+            background-color: #6c757d;
+            cursor: not-allowed;
         }
 
         #videoFeed {
@@ -76,12 +107,17 @@
             margin: 1rem 0;
         }
 
-        #videoDownloadSection {
+        .stream-controls button {
+            width: auto;
+            margin: 0 0.5rem;
+        }
+
+        #videoDownloadSection, #imageResultSection {
             margin-top: 1rem;
             display: none;
         }
 
-        #videoDownloadLink {
+        .download-link {
             display: inline-block;
             padding: 0.5rem 1rem;
             background-color: #28a745;
@@ -89,15 +125,45 @@
             border-radius: 5px;
             text-decoration: none;
             font-weight: bold;
+            margin: 0.5rem;
         }
 
-        #videoDownloadLink:hover {
+        .download-link:hover {
             background-color: #218838;
         }
 
+        #resultsDisplay {
+            background: white;
+            padding: 1rem;
+            border-radius: 8px;
+            margin-top: 1rem;
+            text-align: left;
+            display: none;
+        }
+
+        .results-header {
+            font-weight: bold;
+            margin-bottom: 1rem;
+            color: #495057;
+        }
+
+        .detection-item {
+            background: #f8f9fa;
+            padding: 0.5rem;
+            margin: 0.5rem 0;
+            border-radius: 4px;
+            border-left: 4px solid #007bff;
+        }
+
+        .loading {
+            display: none;
+            color: #007bff;
+            font-style: italic;
+        }
+
         @media (max-width: 600px) {
-            button {
-                width: 100%;
+            .form-group {
+                text-align: center;
             }
         }
     </style>
@@ -109,22 +175,63 @@
 
     <div class="container">
         <section class="upload-form">
-            <form id="imageForm" action="/yolo/predict" method="post" enctype="multipart/form-data">
+            <form id="imageForm">
                 <h2>Upload an Image</h2>
-                <input type="file" name="file" accept="image/*" required>
-                <button type="submit">Upload Image</button>
+                <div class="form-group">
+                    <label for="imageFile">Sélectionnez une image :</label>
+                    <input type="file" id="imageFile" name="file" accept="image/*" required>
+                </div>
+                <div class="form-group">
+                    <label for="imageOutputFormat">Format de sortie :</label>
+                    <select id="imageOutputFormat" name="output_format">
+                        <option value="image">Image annotée</option>
+                        <option value="json">Données JSON</option>
+                        <option value="csv">Fichier CSV</option>
+                    </select>
+                </div>
+                <button type="submit">
+                    <span class="btn-text">Analyser l'image</span>
+                    <span class="loading">Traitement en cours...</span>
+                </button>
             </form>
+
+            <div id="imageResultSection">
+                <div id="imageDisplay" style="display: none;">
+                    <h3>Image annotée :</h3>
+                    <img id="resultImage" style="max-width: 100%; border-radius: 8px;">
+                </div>
+                <div id="downloadLinks"></div>
+            </div>
 
             <form id="videoForm">
                 <h2>Upload a Video</h2>
-                <input type="file" name="file" accept="video/*" required>
-                <button type="submit">Upload Video</button>
+                <div class="form-group">
+                    <label for="videoFile">Sélectionnez une vidéo :</label>
+                    <input type="file" id="videoFile" name="file" accept="video/*" required>
+                </div>
+                <div class="form-group">
+                    <label for="videoOutputFormat">Format de sortie :</label>
+                    <select id="videoOutputFormat" name="output_format">
+                        <option value="image">Vidéo annotée</option>
+                        <option value="json">Données JSON</option>
+                        <option value="csv">Fichier CSV</option>
+                    </select>
+                </div>
+                <button type="submit">
+                    <span class="btn-text">Analyser la vidéo</span>
+                    <span class="loading">Traitement en cours...</span>
+                </button>
             </form>
 
             <div id="videoDownloadSection">
-                <a id="videoDownloadLink" href="#" download="video_annotated.mp4">📥 Télécharger la vidéo annotée</a>
+                <div id="videoDownloadLinks"></div>
             </div>
         </section>
+
+        <div id="resultsDisplay">
+            <div class="results-header">Résultats de détection :</div>
+            <div id="resultsContent"></div>
+        </div>
 
         <section>
             <h2>Live Detection Stream</h2>
@@ -167,6 +274,7 @@
             }
         }
 
+        // Gestion du streaming
         startStreamBtn.addEventListener('click', async () => {
             try {
                 const response = await fetch('/yolo/start-stream', { method: 'POST' });
@@ -201,17 +309,140 @@
             }
         });
 
+        // Fonction pour afficher les résultats JSON
+        function displayJSONResults(data, isVideo = false) {
+            const resultsDisplay = document.getElementById('resultsDisplay');
+            const resultsContent = document.getElementById('resultsContent');
+            
+            let html = `<p><strong>Total détections:</strong> ${data.total_detections}</p>`;
+            
+            if (isVideo) {
+                html += `<p><strong>Total frames:</strong> ${data.total_frames}</p>`;
+                if (data.video_duration) {
+                    html += `<p><strong>Durée vidéo:</strong> ${data.video_duration.toFixed(2)}s</p>`;
+                }
+            }
+            
+            if (data.detections && data.detections.length > 0) {
+                html += '<h4>Détections détaillées :</h4>';
+                data.detections.forEach((detection, index) => {
+                    html += `
+                        <div class="detection-item">
+                            <strong>${detection.class_name}</strong> - 
+                            Confiance: ${(detection.confidence * 100).toFixed(1)}% - 
+                            Position: [${detection.bbox.map(coord => coord.toFixed(1)).join(', ')}]
+                        </div>
+                    `;
+                });
+            } else {
+                html += '<p>Aucune détection trouvée.</p>';
+            }
+            
+            resultsContent.innerHTML = html;
+            resultsDisplay.style.display = 'block';
+        }
+
+        // Fonction pour gérer les boutons de chargement
+        function setLoadingState(form, isLoading) {
+            const button = form.querySelector('button');
+            const btnText = button.querySelector('.btn-text');
+            const loading = button.querySelector('.loading');
+            
+            button.disabled = isLoading;
+            btnText.style.display = isLoading ? 'none' : 'inline';
+            loading.style.display = isLoading ? 'inline' : 'none';
+        }
+
+        // Formulaire image
+        const imageForm = document.getElementById('imageForm');
+        const imageResultSection = document.getElementById('imageResultSection');
+        const resultImage = document.getElementById('resultImage');
+        const imageDisplay = document.getElementById('imageDisplay');
+
+        imageForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            setLoadingState(imageForm, true);
+            
+            const formData = new FormData();
+            const fileInput = document.getElementById('imageFile');
+            const outputFormat = document.getElementById('imageOutputFormat').value;
+            
+            formData.append('file', fileInput.files[0]);
+            
+            try {
+                const response = await fetch(`/yolo/predict?output_format=${outputFormat}`, {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (!response.ok) {
+                    throw new Error('Échec du traitement de l\'image.');
+                }
+
+                const downloadLinks = document.getElementById('downloadLinks');
+                downloadLinks.innerHTML = '';
+                
+                // Cacher les résultats précédents
+                document.getElementById('resultsDisplay').style.display = 'none';
+                imageDisplay.style.display = 'none';
+                
+                if (outputFormat === 'image') {
+                    // Afficher l'image annotée
+                    const blob = await response.blob();
+                    const url = URL.createObjectURL(blob);
+                    resultImage.src = url;
+                    imageDisplay.style.display = 'block';
+                    
+                    // Lien de téléchargement pour l'image
+                    const downloadLink = document.createElement('a');
+                    downloadLink.href = url;
+                    downloadLink.download = 'image_annotated.jpg';
+                    downloadLink.className = 'download-link';
+                    downloadLink.textContent = '📥 Télécharger l\'image annotée';
+                    downloadLinks.appendChild(downloadLink);
+                    
+                } else if (outputFormat === 'csv') {
+                    // Télécharger le fichier CSV
+                    const blob = await response.blob();
+                    const url = URL.createObjectURL(blob);
+                    const downloadLink = document.createElement('a');
+                    downloadLink.href = url;
+                    downloadLink.download = 'detections.csv';
+                    downloadLink.className = 'download-link';
+                    downloadLink.textContent = '📥 Télécharger le CSV';
+                    downloadLinks.appendChild(downloadLink);
+                    
+                } else if (outputFormat === 'json') {
+                    // Afficher les résultats JSON
+                    const data = await response.json();
+                    displayJSONResults(data, false);
+                }
+                
+                imageResultSection.style.display = 'block';
+
+            } catch (error) {
+                alert("Erreur lors de l'envoi de l'image : " + error.message);
+            } finally {
+                setLoadingState(imageForm, false);
+            }
+        });
+
         // Formulaire vidéo
         const videoForm = document.getElementById('videoForm');
         const videoDownloadSection = document.getElementById('videoDownloadSection');
-        const videoDownloadLink = document.getElementById('videoDownloadLink');
 
         videoForm.addEventListener('submit', async (e) => {
             e.preventDefault();
-            const formData = new FormData(videoForm);
+            setLoadingState(videoForm, true);
+            
+            const formData = new FormData();
+            const fileInput = document.getElementById('videoFile');
+            const outputFormat = document.getElementById('videoOutputFormat').value;
+            
+            formData.append('file', fileInput.files[0]);
 
             try {
-                const response = await fetch('/yolo/predict-video', {
+                const response = await fetch(`/yolo/predict-video?output_format=${outputFormat}`, {
                     method: 'POST',
                     body: formData
                 });
@@ -220,12 +451,46 @@
                     throw new Error('Échec du traitement de la vidéo.');
                 }
 
-                const blob = await response.blob();
-                const url = URL.createObjectURL(blob);
-                videoDownloadLink.href = url;
+                const videoDownloadLinks = document.getElementById('videoDownloadLinks');
+                videoDownloadLinks.innerHTML = '';
+                
+                // Cacher les résultats précédents
+                document.getElementById('resultsDisplay').style.display = 'none';
+                
+                if (outputFormat === 'image') {
+                    // Télécharger la vidéo annotée
+                    const blob = await response.blob();
+                    const url = URL.createObjectURL(blob);
+                    const downloadLink = document.createElement('a');
+                    downloadLink.href = url;
+                    downloadLink.download = 'video_annotated.mp4';
+                    downloadLink.className = 'download-link';
+                    downloadLink.textContent = '📥 Télécharger la vidéo annotée';
+                    videoDownloadLinks.appendChild(downloadLink);
+                    
+                } else if (outputFormat === 'csv') {
+                    // Télécharger le fichier CSV
+                    const blob = await response.blob();
+                    const url = URL.createObjectURL(blob);
+                    const downloadLink = document.createElement('a');
+                    downloadLink.href = url;
+                    downloadLink.download = 'video_detections.csv';
+                    downloadLink.className = 'download-link';
+                    downloadLink.textContent = '📥 Télécharger le CSV';
+                    videoDownloadLinks.appendChild(downloadLink);
+                    
+                } else if (outputFormat === 'json') {
+                    // Afficher les résultats JSON
+                    const data = await response.json();
+                    displayJSONResults(data, true);
+                }
+                
                 videoDownloadSection.style.display = 'block';
+
             } catch (error) {
-                alert("Erreur lors de l’envoi de la vidéo : " + error.message);
+                alert("Erreur lors de l'envoi de la vidéo : " + error.message);
+            } finally {
+                setLoadingState(videoForm, false);
             }
         });
     </script>
