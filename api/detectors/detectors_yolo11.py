@@ -2,14 +2,13 @@ from ultralytics import YOLO
 import os
 import cv2
 import numpy as np
-import pandas as pd
-from typing import List, Dict, Optional
+from typing import List, Dict
 
 class YOLOv11Detector:
     def __init__(self, model_path: str = os.path.join(os.path.dirname(__file__), "..", "models", "final_model_yolo11.pt")):
         if not os.path.exists(model_path):
             raise FileNotFoundError(
-                f"Le modèle YOLOv11 n'a pas été trouvé à l'emplacement : {model_path}\n"
+                f"Le modèle YOLOv11 n’a pas été trouvé à l’emplacement : {model_path}\n"
                 f"Veuillez vous assurer que le fichier .pt est présent dans le dossier du projet."
             )
         try:
@@ -55,10 +54,9 @@ class YOLOv11Detector:
 
         return detections
 
-    def process_video(self, video_path: str, output_path: str = None) -> Dict:
+    def process_video(self, video_path: str, output_path: str) -> List[Dict]:
         """
         Traite une vidéo frame par frame et sauvegarde une vidéo annotée.
-        Retourne un dictionnaire avec les détections et les métadonnées.
         """
         cap = cv2.VideoCapture(video_path)
         if not cap.isOpened():
@@ -67,10 +65,7 @@ class YOLOv11Detector:
         width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         fps = cap.get(cv2.CAP_PROP_FPS)
-        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-        duration = total_frames / fps if fps > 0 else 0
 
-        
         fourcc = cv2.VideoWriter_fourcc(*'mp4v')
         out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
 
@@ -84,54 +79,19 @@ class YOLOv11Detector:
 
             detections = self.process_image(frame)
             all_detections.extend(detections)
-            # Ajouter le numéro de frame et timestamp à chaque détection
+
+            # Annoter frame à nouveau pour la vidéo
             for det in detections:
                 x1, y1, x2, y2 = map(int, det["bbox"])
                 cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
                 label = f"{det['class_name']} {det['confidence']:.2f}"
                 text_y = max(y1 - 10, 20)
                 cv2.putText(frame, label, (x1, text_y), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 0, 0), 2)
-                out.write(frame)
-            
+
+            out.write(frame)
             frame_count += 1
 
         cap.release()
-        if out:
-            out.release()
-            print(f"✅ Vidéo annotée enregistrée dans : {output_path} ({frame_count} frames)")
-        
-        return {
-            'detections': all_detections,
-            'total_frames': frame_count,
-            'duration': duration,
-            'fps': fps
-        }
-
-    def save_detections_to_csv(self, detections: List[Dict], output_path: str) -> str:
-        """
-        Sauvegarde les détections dans un fichier CSV.
-        """
-        if not detections:
-            # Créer un CSV vide avec les en-têtes
-            df = pd.DataFrame(columns=['class_name', 'confidence', 'x1', 'y1', 'x2', 'y2', 'frame_number', 'timestamp'])
-        else:
-            # Préparer les données pour le DataFrame
-            csv_data = []
-            for det in detections:
-                row = {
-                    'class_name': det['class_name'],
-                    'confidence': det['confidence'],
-                    'x1': det['bbox'][0],
-                    'y1': det['bbox'][1], 
-                    'x2': det['bbox'][2],
-                    'y2': det['bbox'][3],
-                    'frame_number': det.get('frame_number', 0),
-                    'timestamp': det.get('timestamp', 0.0)
-                }
-                csv_data.append(row)
-            
-            df = pd.DataFrame(csv_data)
-        
-        df.to_csv(output_path, index=False)
-        print(f"✅ Détections sauvegardées dans le fichier CSV : {output_path}")
-        return output_path
+        out.release()
+        print(f"✅ Vidéo annotée enregistrée dans : {output_path} ({frame_count} frames)")
+        return all_detections
