@@ -65,3 +65,12 @@ ultralytics-thop==2.0.14
 urllib3==2.4.0
 uvicorn==0.34.2
 websockets==15.0.1
+sqlalchemy
+asyncpg
+pgvector
+pytest
+pytest-asyncio
+aiosqlite
+dotenv
+python-dotenv
+alembic

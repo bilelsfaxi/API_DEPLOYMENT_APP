@@ -10,7 +10,7 @@ import asyncio
 
 # Importation des modules internes
 from api.detectors import detectors_yolo11
-from api.routers import routers_yolo11
+from api.routers import routers_yolo11, db_router
 
 # Configuration du logging
 logging.basicConfig(level=logging.INFO)
@@ -33,6 +33,9 @@ routers_yolo11.detector = detector
 
 # Enregistrement des routes du routeur YOLOv11
 app.include_router(routers_yolo11.router)
+
+# Enregistrement des routes du routeur de la base de données
+app.include_router(db_router.router)
 
 @app.on_event("startup")
 async def startup_event():
