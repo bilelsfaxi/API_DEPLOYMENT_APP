@@ -10,7 +10,8 @@ import asyncio
 
 # Importation des modules internes
 from api.detectors import detectors_yolo11
-from api.routers import routers_yolo11
+from api.routers import routers_yolo11, db_router
+from api.database import engine, Base
 
 # Configuration du logging
 logging.basicConfig(level=logging.INFO)
@@ -34,9 +35,17 @@ routers_yolo11.detector = detector
 # Enregistrement des routes du routeur YOLOv11
 app.include_router(routers_yolo11.router)
 
+# Enregistrement des routes du routeur de la base de données
+app.include_router(db_router.router)
+
 @app.on_event("startup")
 async def startup_event():
     """Code exécuté au démarrage de l'application."""
+    # Créer les tables dans la base de données si elles n'existent pas.
+    # C'est utile pour le développement et les tests.
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+        
     logger.info("✅ Application démarrée avec succès.")
 
 @app.get("/", response_class=HTMLResponse)
