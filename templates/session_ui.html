@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Session de Validation de Posture</title>
+    <style>
+        body { font-family: sans-serif; margin: 0; background-color: #f0f2f5; display: flex; flex-direction: column; align-items: center; }
+        header { width: 100%; background-color: #4a5c6a; color: white; padding: 1rem; text-align: center; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .container { display: flex; flex-wrap: wrap; justify-content: center; gap: 2rem; padding: 2rem; width: 100%; max-width: 1400px; }
+        .panel { background-color: white; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); overflow: hidden; }
+        .panel h2 { background-color: #6c7a89; color: white; margin: 0; padding: 0.8rem 1rem; font-size: 1.2rem; }
+        .panel-content { padding: 1rem; }
+        #live-stream-panel, #reference-video-panel { flex: 1 1 500px; min-width: 400px; }
+        #status-panel { flex: 0 1 100%; text-align: center; }
+        #webcam-feed { width: 100%; height: auto; background-color: #000; border-radius: 4px; }
+        #reference-video { width: 100%; }
+        #status-box { background-color: #e7f3ff; border: 1px solid #91caff; padding: 1.5rem; border-radius: 8px; }
+        #status-box h3 { margin: 0 0 1rem 0; font-size: 1.5rem; color: #333; }
+        #success-counter { font-size: 3rem; font-weight: bold; color: #1890ff; }
+        .error { color: #d9534f; font-weight: bold; }
+    </style>
+</head>
+<body>
+
+    <header>
+        <h1>Session de Validation de Posture</h1>
+        <p>Session ID: <span id="session-id-display"></span></p>
+    </header>
+
+    <div class="container">
+        <div id="live-stream-panel" class="panel">
+            <h2>Flux Webcam en Direct</h2>
+            <div class="panel-content">
+                <img id="webcam-feed" src="" alt="Flux Webcam">
+                <p id="ws-status">Connexion en cours...</p>
+            </div>
+        </div>
+
+        <div id="reference-video-panel" class="panel">
+            <h2>Vidéo de Référence</h2>
+            <div class="panel-content">
+                <video id="reference-video" controls autoplay muted loop>
+                    <source src="" type="video/mp4">
+                    Votre navigateur ne supporte pas la balise vidéo.
+                </video>
+                 <p>Posture Cible: <strong id="target-posture">...</strong></p>
+            </div>
+        </div>
+    </div>
+
+    <div class="container" style="padding-top: 0;">
+        <div id="status-panel" class="panel">
+             <h2>Statut de la Session</h2>
+             <div class="panel-content">
+                 <div id="status-box">
+                     <h3>Compteur de Succès</h3>
+                     <p id="success-counter">0 / 4</p>
+                 </div>
+             </div>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener("DOMContentLoaded", () => {
+            const pathParts = window.location.pathname.split('/');
+            const sessionId = pathParts[pathParts.indexOf('sessions') + 1];
+
+            if (!sessionId) {
+                document.body.innerHTML = "<h1 class='error'>ID de session non trouvé dans l'URL.</h1>";
+                return;
+            }
+            
+            document.getElementById('session-id-display').textContent = sessionId;
+
+            const webcamFeed = document.getElementById('webcam-feed');
+            const wsStatus = document.getElementById('ws-status');
+            const successCounter = document.getElementById('success-counter');
+            const referenceVideo = document.getElementById('reference-video');
+            const targetPosture = document.getElementById('target-posture');
+
+            // --- WebSocket pour le flux vidéo ---
+            const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const wsUrl = `${wsProtocol}//${window.location.host}/yolo/ws/${sessionId}`;
+            const ws = new WebSocket(wsUrl);
+
+            ws.onopen = () => {
+                console.log("WebSocket connecté");
+                wsStatus.textContent = "Connecté";
+                wsStatus.style.color = "green";
+            };
+
+            ws.onmessage = (event) => {
+                if (typeof event.data === 'string') {
+                    // Gérer les messages texte du serveur (ex: statut)
+                    wsStatus.textContent = `Info: ${event.data}`;
+                } else {
+                    // Gérer les frames vidéo (Blob)
+                    const url = URL.createObjectURL(event.data);
+                    webcamFeed.src = url;
+                    // Libérer la mémoire de l'URL précédente pour éviter les fuites
+                    webcamFeed.onload = () => URL.revokeObjectURL(url);
+                }
+            };
+
+            ws.onerror = (event) => {
+                console.error("Erreur WebSocket:", event);
+                wsStatus.textContent = "Erreur de connexion WebSocket.";
+                wsStatus.style.color = "red";
+            };
+
+            ws.onclose = () => {
+                console.log("WebSocket déconnecté");
+                wsStatus.textContent = "Déconnecté";
+                wsStatus.style.color = "orange";
+            };
+
+            // --- Fetch du statut de la session (polling) ---
+            const fetchStatus = async () => {
+                try {
+                    const response = await fetch(`/db/sessions/${sessionId}/status`);
+                    if (!response.ok) {
+                        throw new Error(`Erreur HTTP: ${response.status}`);
+                    }
+                    const data = await response.json();
+                    successCounter.textContent = `${data.successful_attempts} / 4`;
+                    if(data.success_detected) {
+                        successCounter.style.color = "#52c41a";
+                        successCounter.textContent += " - Validé!";
+                    }
+                } catch (error) {
+                    console.error("Erreur lors de la récupération du statut:", error);
+                    successCounter.textContent = "Erreur";
+                }
+            };
+            
+            // --- Fetch de la vidéo de référence ---
+            const fetchReferenceVideo = async () => {
+                try {
+                    // Note: L'endpoint /next_video retourne des infos sur la vidéo, pas le fichier lui-même.
+                    // On suppose que la réponse contient un `video_path` utilisable pour construire l'URL.
+                    const response = await fetch(`/db/sessions/${sessionId}/next_video`);
+                     if (!response.ok) {
+                        throw new Error(`Erreur HTTP: ${response.status}`);
+                    }
+                    const videoInfo = await response.json();
+                    
+                    // Hypothèse: videoInfo.video_path = "some_video.mp4" et les vidéos sont dans /static/videos/
+                    // Si votre structure est différente, ajustez ce chemin.
+                    referenceVideo.src = `/static/videos/${videoInfo.video_path}`;
+                    referenceVideo.load();
+                    
+                    targetPosture.textContent = videoInfo.posture;
+
+                } catch (error) {
+                    console.error("Erreur lors de la récupération de la vidéo de référence:", error);
+                    referenceVideo.parentElement.innerHTML = "<p class='error'>Impossible de charger la vidéo de référence.</p>";
+                }
+            };
+
+            // Initialiser la page et démarrer le polling
+            fetchStatus();
+            fetchReferenceVideo();
+            setInterval(fetchStatus, 3000); // Mettre à jour le statut toutes les 3 secondes
+        });
+    </script>
+</body>
+</html>
