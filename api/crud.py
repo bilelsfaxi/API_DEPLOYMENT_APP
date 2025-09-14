@@ -1,6 +1,7 @@
 # api/crud.py
 import random
 import logging
+from datetime import datetime, timezone
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy import func, and_
@@ -45,7 +46,10 @@ async def create_video_session(db: AsyncSession, session: db_schemas.VideoSessio
         logger.warning(f"Attempted to create session for non-existent dog_id: {session.dog_id}")
         raise HTTPException(status_code=404, detail=f"Dog with id {session.dog_id} not found")
 
-    db_session = models.VideoSession(**session.model_dump())
+    db_session = models.VideoSession(
+        **session.model_dump(),
+        session_start=datetime.now(timezone.utc)
+    )
     db.add(db_session)
     await db.commit()
     await db.refresh(db_session)
