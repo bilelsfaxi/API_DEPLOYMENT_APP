@@ -130,10 +130,10 @@ async def test_exactly_4_successes(db_session, seed_data):
 async def test_video_selection_is_deterministic(db_session, seed_data):
     """Tests that the video selection cycles through unused videos first."""
     dog_id = seed_data["dog_id"]
-    session_data = db_schemas.VideoSessionCreate(dog_id=dog_id, posture=models.PostureEnum.a_quatre_pattes)
+    session_data = db_schemas.VideoSessionCreate(dog_id=dog_id, posture=models.PostureEnum.a_pieds)
     session = await crud.create_video_session(db=db_session, session=session_data)
 
-    all_video_ids = set(seed_data["videos"][models.PostureEnum.a_quatre_pattes])
+    all_video_ids = set(seed_data["videos"][models.PostureEnum.a_pieds])
     used_video_ids = set()
 
     for i in range(4):

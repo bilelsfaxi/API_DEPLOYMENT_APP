@@ -1,6 +1,6 @@
 # api/models.py
 import enum
-from sqlalchemy import (Column, ForeignKey, Text, Boolean, Float,
+from sqlalchemy import (Column, ForeignKey, Text, Boolean, Float, 
                         Integer, Enum as PgEnum, DateTime)
 from sqlalchemy.orm import relationship
 # Correction de l'import
@@ -15,7 +15,7 @@ from .database import Base
 class PostureEnum(str, enum.Enum):
     assis = "assis"
     debout = "debout"
-    a_pieds = "a pieds"
+    a_pieds = "a_pieds"
 
 class Dog(Base):
     __tablename__ = "dogs"

@@ -54,23 +54,11 @@ async def get_session_status_endpoint(session_id: int, db: AsyncSession = Depend
     """Récupère le statut complet d'une session, incluant le nombre de succès."""
     return await crud.get_session_status(db=db, session_id=session_id)
 
-@router.get("/sessions/{session_id}/next_video", response_model=db_schemas.PostureDetectionResult, summary="Obtenir la prochaine vidéo de référence")
+@router.get("/sessions/{session_id}/next_video", response_model=db_schemas.VideoReference, summary="Obtenir la prochaine vidéo de référence")
 async def get_next_video_endpoint(session_id: int, db: AsyncSession = Depends(get_db)):
     """Suggère une vidéo de référence pour la prochaine tentative de la session."""
-    # Note: The response_model is a bit of a stretch, but it contains the video info.
-    # A dedicated schema could be better in the long run.
     next_video = await crud.get_next_video_for_session(db=db, session_id=session_id)
-    # We need to shape the response to fit PostureDetectionResult or a new schema
-    # This is a simplified response for now. A proper implementation might need a dedicated schema.
-    return {
-        "id": next_video.id,
-        "session_id": session_id,
-        "video_id": next_video.id,
-        "posture": next_video.posture,
-        "confidence": 1.0, # Placeholder
-        "result": "suggestion", # Placeholder
-        "timestamp": "2025-01-01T00:00:00Z" # Placeholder
-    }
+    return next_video
 
 
 @router.get("/dogs/{dog_id}/validated_postures", response_model=List[db_schemas.ValidatedPosture], summary="Lister les postures validées pour un chien")

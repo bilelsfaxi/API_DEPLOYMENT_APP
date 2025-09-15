@@ -73,3 +73,11 @@ class ValidatedPosture(BaseModel):
     posture: PostureEnum
     validated_at: datetime
     model_config = ConfigDict(from_attributes=True)
+
+# Nouveau schéma pour la réponse de l'endpoint next_video
+class VideoReference(BaseModel):
+    id: int
+    posture: PostureEnum
+    video_path: str
+
+    model_config = ConfigDict(from_attributes=True)
