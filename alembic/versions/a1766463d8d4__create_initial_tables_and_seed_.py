@@ -44,8 +44,7 @@ def upgrade() -> None:
     op.create_table('reference_posture_videos',
         sa.Column('id', sa.Integer(), primary_key=True, nullable=False),
         sa.Column('posture', posture_enum, nullable=False),
-        sa.Column('video_path', sa.Text(), nullable=False),
-        sa.Column('description', sa.Text(), nullable=True)
+        sa.Column('video_path', sa.Text(), nullable=False)
     )
 
     op.create_table('video_sessions',

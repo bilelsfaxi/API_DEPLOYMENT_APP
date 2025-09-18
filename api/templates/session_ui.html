@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Session UI</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 p-4">
+    <div class="container mx-auto">
+        <h1 class="text-2xl font-bold mb-4">Session {{ session_id }}: {{ posture.value }}</h1>
+        
+        <div class="grid grid-cols-2 gap-4 mb-4">
+            {% for video in videos %}
+            <div>
+                <h3 class="text-lg font-semibold">Reference Video {{ video.id }}</h3>
+                <video id="ref-video-{{ video.id }}" class="w-full h-64" controls loop>
+                    <source src="/{{ video.video_path }}" type="video/mp4">
+                    Your browser does not support the video tag.
+                </video>
+            </div>
+            {% endfor %}
+        </div>
+        
+        <div class="mb-4">
+            <h2 class="text-xl font-semibold">Webcam Stream</h2>
+            <video id="webcam-stream" class="w-full h-64" autoplay></video>
+        </div>
+        
+        <div class="mb-4">
+            <h2 class="text-xl font-semibold">Session Status</h2>
+            <p id="status">Successful Attempts: <span id="success-count">0</span></p>
+            <p id="posture-status">Posture Validated: <span id="validated">No</span></p>
+        </div>
+
+        <div class="mb-4">
+            <h2 class="text-xl font-semibold">Upload Image/Video</h2>
+            <input type="file" id="media-upload" accept="image/*,video/*">
+            <button onclick="uploadMedia()" class="bg-blue-500 text-white p-2 rounded">Upload</button>
+        </div>
+
+        <script>
+            const sessionId = "{{ session_id }}";
+            let currentVideoIndex = 0;
+            const videoList = JSON.parse('{{ videos | tojson | safe | escapejs }}');
+
+            async function fetchVideos() {
+                const response = await fetch(`/db/sessions/${sessionId}/next_videos`);
+                const newVideos = await response.json();
+                newVideos.forEach((video, index) => {
+                    const videoElement = document.getElementById(`ref-video-${video.id}`);
+                    if (videoElement) {
+                        videoElement.src = `/${video.video_path}`;
+                    }
+                });
+            }
+
+            async function updateStatus() {
+                const response = await fetch(`/db/sessions/${sessionId}/status`);
+                const status = await response.json();
+                document.getElementById('success-count').innerText = status.successful_attempts;
+                document.getElementById('validated').innerText = status.success_detected ? 'Yes' : 'No';
+                if (status.success_detected) {
+                    alert('Posture validated! Session complete.');
+                    videoList.forEach(v => document.getElementById(`ref-video-${v.id}`).pause());
+                }
+            }
+
+            async function uploadMedia() {
+                const fileInput = document.getElementById('media-upload');
+                const file = fileInput.files[0];
+                if (!file) return;
+                
+                const formData = new FormData();
+                formData.append('file', file);
+                const endpoint = file.type.startsWith('image/') 
+                    ? `/yolo/predict?session_id=${sessionId}&video_id=${videoList[currentVideoIndex].id}&output_format=json` 
+                    : `/yolo/predict-video?session_id=${sessionId}&video_id=${videoList[currentVideoIndex].id}`;
+                
+                const response = await fetch(endpoint, {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                if (response.ok) {
+                    currentVideoIndex = (currentVideoIndex + 1) % videoList.length;
+                    await updateStatus();
+                    await fetchVideos();
+                }
+            }
+
+            let ws = new WebSocket(`ws://localhost:7860/yolo/ws/${sessionId}/${videoList[currentVideoIndex].id}`);
+            ws.onmessage = function(event) {
+                const data = JSON.parse(event.data);
+                const stream = document.getElementById('webcam-stream');
+                stream.src = `data:image/jpeg;base64,${data.frame}`;
+                if (data.detections.length > 0 && data.detections[0].result === 'success') {
+                    currentVideoIndex = (currentVideoIndex + 1) % videos.length;
+                    ws.close();
+                    setTimeout(() => {
+                        ws = new WebSocket(`ws://localhost:7860/yolo/ws/${sessionId}/${videoList[currentVideoIndex].id}`);
+                        ws.onmessage = this.onmessage;
+                    }, 100);
+                    updateStatus();
+                    fetchVideos();
+                }
+            };
+
+            updateStatus();
+            setInterval(updateStatus, 5000);
+        </script>
+    </body>
+</html>
