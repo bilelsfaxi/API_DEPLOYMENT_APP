@@ -8,3 +8,7 @@ DATABASE_URL = "postgresql+asyncpg://postgres:bilelsf2001@localhost:5432/dog_pos
 engine = create_async_engine(DATABASE_URL)
 SessionLocal = async_sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
+
+async def get_db():
+    async with SessionLocal() as session:
+        yield session

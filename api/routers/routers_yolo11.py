@@ -1,6 +1,9 @@
-from fastapi import APIRouter, File, UploadFile, HTTPException, WebSocket, WebSocketDisconnect, Form, Query
+from fastapi import APIRouter, File, UploadFile, HTTPException, WebSocket, WebSocketDisconnect, Query, Depends
 from fastapi.responses import Response, JSONResponse, FileResponse
 from api.schemas.schemas_yolo11 import DetectionResponse, VideoDetectionResponse, OutputFormat, Detection
+from api.detectors.detectors_yolo11 import YOLOv11Detector
+from api import crud, schemas, database
+from sqlalchemy.ext.asyncio import AsyncSession
 import os
 import tempfile
 import numpy as np
@@ -8,91 +11,94 @@ from io import BytesIO
 from PIL import Image
 import cv2
 import asyncio
-from typing import Optional
+import base64
+import logging
+import time
 
 router = APIRouter(prefix="/yolo", tags=["YOLOv11"])
-detector = None
-
+detector = None  # Le détecteur sera injecté depuis main.py
 video_source = None
 streaming_active = False
 
 @router.post("/predict")
 async def predict(
     file: UploadFile = File(...),
-    output_format: OutputFormat = Query(OutputFormat.IMAGE, description="Format de sortie: image, json, ou csv")
+    session_id: int = Query(...),
+    video_id: int = Query(...),
+    output_format: OutputFormat = Query(OutputFormat.IMAGE, description="Format de sortie: image, json, ou csv"),
+    db: AsyncSession = Depends(database.get_db)
 ):
-    """
-    Prédiction sur une image avec choix du format de sortie
-    """
     if not file.content_type.startswith("image/"):
         raise HTTPException(status_code=400, detail="File must be an image")
 
     try:
-        if detector is None:
-            raise RuntimeError("Modèle non initialisé")
-
         contents = await file.read()
         image = Image.open(BytesIO(contents)).convert("RGB")
         image_np = np.array(image)
 
-        # Traitement de l'image
+        detections, metrics = detector.process_image(image_np)
+        
+        if detections:
+            attempt = schemas.PostureAttemptCreate(
+                session_id=session_id,
+                video_id=video_id,
+                confidence=metrics["avg_confidence"],
+                result=detections[0]["result"],
+                prediction_time=metrics["prediction_time"],
+                frames_processed=metrics["frames_processed"]
+            )
+            await crud.create_posture_attempt(db, attempt)
+
         if output_format == OutputFormat.IMAGE:
-            # Mode original - retourne l'image annotée
             with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as temp_output:
                 temp_output_path = temp_output.name
-                detections = detector.process_image(image_np, temp_output_path)
-
+                detector.process_image(image_np, temp_output_path)
             with open(temp_output_path, "rb") as annotated_file:
                 encoded_image = annotated_file.read()
-
             os.remove(temp_output_path)
             return Response(content=encoded_image, media_type="image/jpeg")
         
-        else:
-            # Mode JSON ou CSV - retourne les données de détection
-            detections = detector.process_image(image_np)
+        elif output_format == OutputFormat.JSON:
+            detection_objects = [
+                Detection(
+                    class_name=det["class_name"],
+                    confidence=det["confidence"],
+                    bbox=det["bbox"]
+                ) for det in detections
+            ]
+            return DetectionResponse(
+                detections=detection_objects,
+                total_detections=len(detections),
+                prediction_time=metrics["prediction_time"],
+                avg_confidence=metrics["avg_confidence"],
+                frames_processed=metrics["frames_processed"]
+            )
             
-            if output_format == OutputFormat.JSON:
-                detection_objects = [
-                    Detection(
-                        class_name=det["class_name"],
-                        confidence=det["confidence"],
-                        bbox=det["bbox"]
-                    ) for det in detections
-                ]
-                
-                response = DetectionResponse(
-                    detections=detection_objects,
-                    total_detections=len(detections)
-                )
-                return response
-            
-            elif output_format == OutputFormat.CSV:
-                # Créer un fichier CSV temporaire
-                os.makedirs("temp_results", exist_ok=True)
-                csv_filename = f"detections_{file.filename.split('.')[0]}.csv"
-                csv_path = os.path.join("temp_results", csv_filename)
-                
-                detector.save_detections_to_csv(detections, csv_path)
-                
-                return FileResponse(
-                    path=csv_path,
-                    filename=csv_filename,
-                    media_type="text/csv"
-                )
+        elif output_format == OutputFormat.CSV:
+            os.makedirs("temp_results", exist_ok=True)
+            csv_filename = f"detections_{file.filename.split('.')[0]}.csv"
+            csv_path = os.path.join("temp_results", csv_filename)
+            detector.save_detections_to_csv(detections, csv_path)
+            return FileResponse(
+                path=csv_path,
+                filename=csv_filename,
+                media_type="text/csv"
+            )
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erreur : {str(e)}")
 
 @router.post("/predict-video")
-async def predict_video(file: UploadFile = File(...)):
+async def predict_video(
+    file: UploadFile = File(...),
+    session_id: int = Query(...),
+    video_id: int = Query(...),
+    db: AsyncSession = Depends(database.get_db)
+):
     if not file.content_type.startswith("video/"):
         raise HTTPException(status_code=400, detail="File must be a video")
 
     try:
-        if detector is None:
-            raise RuntimeError("Le modèle YOLOv11 n'a pas été initialisé")
-
         contents = await file.read()
         with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as temp_input:
             temp_input.write(contents)
@@ -100,7 +106,18 @@ async def predict_video(file: UploadFile = File(...)):
 
         with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as temp_output:
             temp_output_path = temp_output.name
-            detector.process_video(temp_input_path, temp_output_path)
+            result = detector.process_video(temp_input_path, temp_output_path)
+
+        if result["detections"]:
+            attempt = schemas.PostureAttemptCreate(
+                session_id=session_id,
+                video_id=video_id,
+                confidence=result["avg_confidence"],
+                result=result["detections"][0]["result"],
+                prediction_time=result["prediction_time"],
+                frames_processed=result["frames_processed"]
+            )
+            await crud.create_posture_attempt(db, attempt)
 
         with open(temp_output_path, "rb") as output_file:
             encoded_video = output_file.read()
@@ -113,9 +130,6 @@ async def predict_video(file: UploadFile = File(...)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erreur lors du traitement de la vidéo : {str(e)}")
 
-
-
-# Routes existantes inchangées
 @router.post("/start-stream")
 async def start_stream():
     global video_source, streaming_active
@@ -137,39 +151,49 @@ async def stop_stream():
         return JSONResponse(content={"message": "Streaming arrêté"})
     return JSONResponse(content={"message": "Déjà arrêté"})
 
-@router.websocket("/ws")
-async def stream_video(websocket: WebSocket):
+@router.websocket("/ws/{session_id}/{video_id}")
+async def stream_video(websocket: WebSocket, session_id: int, video_id: int, db: AsyncSession = Depends(database.get_db)):
     global video_source, streaming_active
     await websocket.accept()
+    if not streaming_active or not video_source or not video_source.isOpened():
+        await websocket.close()
+        return
+
     try:
-        while True:
-            if not streaming_active or not video_source or not video_source.isOpened():
-                await websocket.send_text("Streaming désactivé")
-                await asyncio.sleep(1)
-                continue
-            success, frame = video_source.read()
-            if not success:
-                streaming_active = False
-                await websocket.send_text("Streaming arrêté")
+        frame_count = 0
+        confidences = []
+        start_time = time.time()
+        while streaming_active:
+            ret, frame = video_source.read()
+            if not ret:
                 break
-
-            frame = cv2.resize(frame, (640, 360))
-            detections = detector.process_image(frame)
+            frame_count += 1
+            detections, metrics = detector.process_image(frame)
             for det in detections:
-                x1, y1, x2, y2 = map(int, det["bbox"])
-                cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
-                label = f"{det['class_name']} {det['confidence']:.2f}"
-                text_y = max(y1 - 10, 20)
-                cv2.putText(frame, label, (x1, text_y), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 0, 0), 2)
+                confidences.append(det["confidence"])
+            
+            if detections:
+                avg_confidence = sum(confidences) / len(confidences) if confidences else 0.0
+                attempt = schemas.PostureAttemptCreate(
+                    session_id=session_id,
+                    video_id=video_id,
+                    confidence=avg_confidence,
+                    result=detections[0]["result"],
+                    prediction_time=metrics["prediction_time"],
+                    frames_processed=metrics["frames_processed"]
+                )
+                await crud.create_posture_attempt(db, attempt)
 
-            ret, buffer = cv2.imencode('.jpg', frame)
-            if ret:
-                await websocket.send_bytes(buffer.tobytes())
-            await asyncio.sleep(0.03)
+            _, buffer = cv2.imencode('.jpg', frame)
+            frame_base64 = base64.b64encode(buffer).decode('utf-8')
+            await websocket.send_json({"frame": frame_base64, "detections": detections})
+            await asyncio.sleep(0.1)
+        
+        prediction_time = time.time() - start_time
+        avg_confidence = sum(confidences) / len(confidences) if confidences else 0.0
+        print(f"WebSocket stream: {frame_count} frames, {prediction_time:.2f}s, avg confidence: {avg_confidence:.2f}")
 
-    except (WebSocketDisconnect, Exception):
-        print("Client déconnecté")
+    except WebSocketDisconnect:
+        pass
     finally:
-        if video_source:
-            video_source.release()
-        streaming_active = False
+        await websocket.close()
