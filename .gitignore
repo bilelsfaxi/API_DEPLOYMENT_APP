@@ -3,9 +3,10 @@ __pycache__/
 *.py[cod]
 *.so
 
-# Environnement Python
+# Environnements virtuels et dépendances
 .env
 .venv/
+venv/
 .Python
 
 # Ignore contents of temporary directories, but keep the directories
@@ -23,10 +24,6 @@ temp_results/*
 
 # Logs
 *.log
-
-
-# Environnements virtuels - NE JAMAIS COMMIT
-API_DEPLOYMENT/
 
 # OS / IDE spécifiques
 .DS_Store
