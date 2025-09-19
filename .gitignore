@@ -23,7 +23,7 @@ temp_results/*
 
 
 # Dossier à ignorer (si temporaire ou sensible)
-# API_DEPLOYMENT/
+API_DEPLOYMENT/ # Environnement virtuel
 
 # OS / IDE spécifiques
 .DS_Store
