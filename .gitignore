@@ -8,6 +8,7 @@ __pycache__/
 .venv/
 venv/
 .Python
+API_DEPLOYMENT/
 
 # Ignore contents of temporary directories, but keep the directories
 uploads/*
