@@ -7,23 +7,26 @@ __pycache__/
 .env
 .venv/
 .Python
-# Temporary uploads
+
+# Ignore contents of temporary directories, but keep the directories
 uploads/*
 !uploads/.gitkeep
 temp_results/*
 !temp_results/.gitkeep
 
-
 *.mp4
 *.avi
 *.mov
+
+# Fichiers de modèle (peuvent être très volumineux)
+*.pt
 
 # Logs
 *.log
 
 
-# Dossier à ignorer (si temporaire ou sensible)
-API_DEPLOYMENT/ # Environnement virtuel
+# Environnements virtuels - NE JAMAIS COMMIT
+API_DEPLOYMENT/
 
 # OS / IDE spécifiques
 .DS_Store
