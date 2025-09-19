@@ -119,7 +119,7 @@ async def get_next_videos_for_session(db: AsyncSession, session_id: int) -> List
             models.PostureDetectionResult.session_id == session_id
         )
     )
-    used_video_ids = {row.video_id for row in used_videos_result.scalars().all()}
+    used_video_ids = set(used_videos_result.scalars().all())
     
     available_videos_result = await db.execute(
         select(models.ReferencePostureVideo).filter(
@@ -161,7 +161,7 @@ async def get_session_status(db: AsyncSession, session_id: int):
             models.PostureDetectionResult.session_id == session_id
         )
     )
-    videos_used = list({row.video_id for row in videos_used_result.scalars().all()})
+    videos_used = list(set(videos_used_result.scalars().all()))
     
     return schemas.db_schemas.SessionStatus(
         session_id=session_id,

@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
+from fastapi.responses import HTMLResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from .. import crud
 from ..database import get_db
@@ -17,13 +17,15 @@ async def session_ui(request: Request, session_id: int, db: AsyncSession = Depen
         raise HTTPException(status_code=404, detail=f"Session with id {session_id} not found")
     
     videos = await crud.get_next_videos_for_session(db, session_id)
+    # Convertir les objets Pydantic VideoReference en dictionnaires pour la sérialisation JSON dans Jinja2
+    videos_for_template = [video.model_dump(mode="json") for video in videos]
     
-    return templates.TemplateResponse(
-        "session_ui.html",
-        {
-            "request": request,
-            "session_id": session_id,
-            "posture": session.posture.value,
-            "videos": videos
-        }
-    )
+    context = {
+        "request": request,
+        "session_id": session_id,
+        "posture": session.posture,
+        "videos": videos_for_template
+    }
+    
+    html_content = templates.get_template("session_ui.html").render(context)
+    return HTMLResponse(content=html_content)
