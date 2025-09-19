@@ -24,7 +24,10 @@ logger = logging.getLogger(__name__)
 app = FastAPI(title="YOLOv11 Dog Posture Detection API")
 
 # Monter le répertoire statique pour servir les vidéos de référence et le CSS
-app.mount("/static", StaticFiles(directory="static"), name="static")
+# Le chemin du dossier 'static' est relatif à la racine du projet, pas au dossier 'api'.
+# On utilise os.path.join pour construire un chemin absolu ou relatif fiable.
+static_dir = os.path.join(os.path.dirname(__file__), "..", "static")
+app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
 # Configuration des templates HTML (Jinja2)
 templates = Jinja2Templates(directory="api/templates")

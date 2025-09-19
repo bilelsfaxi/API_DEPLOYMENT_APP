@@ -117,7 +117,7 @@ async def predict_video(
                 prediction_time=result["prediction_time"],
                 frames_processed=result["frames_processed"]
             )
-            await crud.create_posture_attempt(db, attempt)
+            await crud.create_posture_attempt(db, attempt) # On ne récupère pas le retour
 
         with open(temp_output_path, "rb") as output_file:
             encoded_video = output_file.read()

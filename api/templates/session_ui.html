@@ -41,18 +41,21 @@
 
         <script>
             const sessionId = "{{ session_id }}";
+            const statusElement = document.getElementById('status');
+            const successCountElement = document.getElementById('success-count');
+            const validatedElement = document.getElementById('validated');
+
             let currentVideoIndex = 0;
-            const videoList = JSON.parse('{{ videos | tojson | safe | escapejs }}');
+            let videoList = {{ videos | tojson | safe }};
+            let ws;
 
             async function fetchVideos() {
                 const response = await fetch(`/db/sessions/${sessionId}/next_videos`);
-                const newVideos = await response.json();
-                newVideos.forEach((video, index) => {
-                    const videoElement = document.getElementById(`ref-video-${video.id}`);
-                    if (videoElement) {
-                        videoElement.src = `/${video.video_path}`;
-                    }
-                });
+                if (response.ok) {
+                    videoList = await response.json();
+                    // Idéalement, ici, vous devriez aussi mettre à jour le DOM
+                    // pour afficher les nouvelles vidéos si elles changent.
+                }
             }
 
             async function updateStatus() {
@@ -69,45 +72,73 @@
             async function uploadMedia() {
                 const fileInput = document.getElementById('media-upload');
                 const file = fileInput.files[0];
-                if (!file) return;
+                if (!file) {
+                    alert("Please select a file to upload.");
+                    return;
+                }
                 
                 const formData = new FormData();
                 formData.append('file', file);
+
+                if (currentVideoIndex >= videoList.length) {
+                    alert("No more videos available for this attempt.");
+                    return;
+                }
+                const currentVideoId = videoList[currentVideoIndex].id;
+
                 const endpoint = file.type.startsWith('image/') 
-                    ? `/yolo/predict?session_id=${sessionId}&video_id=${videoList[currentVideoIndex].id}&output_format=json` 
-                    : `/yolo/predict-video?session_id=${sessionId}&video_id=${videoList[currentVideoIndex].id}`;
+                    ? `/yolo/predict?session_id=${sessionId}&video_id=${currentVideoId}&output_format=json` 
+                    : `/yolo/predict-video?session_id=${sessionId}&video_id=${currentVideoId}`;
                 
-                const response = await fetch(endpoint, {
-                    method: 'POST',
-                    body: formData
-                });
-                
-                if (response.ok) {
-                    currentVideoIndex = (currentVideoIndex + 1) % videoList.length;
-                    await updateStatus();
-                    await fetchVideos();
+                try {
+                    const response = await fetch(endpoint, {
+                        method: 'POST',
+                        body: formData
+                    });
+                    
+                    if (response.ok) {
+                        alert("Upload successful!");
+                        currentVideoIndex = (currentVideoIndex + 1) % videoList.length;
+                        await updateStatus();
+                        await fetchVideos(); // Refresh video list for next attempts
+                    } else {
+                        const error = await response.json();
+                        alert(`Upload failed: ${error.detail || response.statusText}`);
+                    }
+                } catch (error) {
+                    alert(`An error occurred: ${error.message}`);
                 }
             }
 
-            let ws = new WebSocket(`ws://localhost:7860/yolo/ws/${sessionId}/${videoList[currentVideoIndex].id}`);
-            ws.onmessage = function(event) {
+            function handleWebSocketMessage(event) {
                 const data = JSON.parse(event.data);
                 const stream = document.getElementById('webcam-stream');
                 stream.src = `data:image/jpeg;base64,${data.frame}`;
                 if (data.detections.length > 0 && data.detections[0].result === 'success') {
-                    currentVideoIndex = (currentVideoIndex + 1) % videos.length;
-                    ws.close();
-                    setTimeout(() => {
-                        ws = new WebSocket(`ws://localhost:7860/yolo/ws/${sessionId}/${videoList[currentVideoIndex].id}`);
-                        ws.onmessage = this.onmessage;
-                    }, 100);
+                    console.log("Success detected on stream, advancing to next video.");
+                    currentVideoIndex = (currentVideoIndex + 1) % videoList.length;
                     updateStatus();
                     fetchVideos();
+                    // Reconnect websocket for the new video
+                    connectWebSocket();
                 }
-            };
+            }
 
-            updateStatus();
-            setInterval(updateStatus, 5000);
+            function connectWebSocket() {
+                if (ws) {
+                    ws.close();
+                }
+                const currentVideoId = videoList[currentVideoIndex].id;
+                ws = new WebSocket(`ws://localhost:8000/yolo/ws/${sessionId}/${currentVideoId}`);
+                ws.onmessage = handleWebSocketMessage;
+                ws.onerror = (event) => console.error("WebSocket error:", event);
+                ws.onclose = () => console.log("WebSocket connection closed.");
+            }
+
+            // Initial calls
+            updateStatus(); // Initial status check
+            setInterval(updateStatus, 5000); // Periodically check status
+            // connectWebSocket(); // Uncomment if you want to start streaming immediately
         </script>
     </body>
 </html>
