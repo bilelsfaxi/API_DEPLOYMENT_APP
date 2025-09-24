@@ -10,16 +10,30 @@ logger = logging.getLogger(__name__)
 env_db_url = os.getenv("DATABASE_URL")
 raw_db_url = env_db_url if env_db_url else "postgresql://postgres:bilelsf2001@localhost:5432/dog_posture_db"
 
+# Log de l'URL brute pour le débogage
+logger.info(f"Raw DB URL (first 20 chars): {raw_db_url[:20]}...")
+
 # Assure que l'URL utilise le driver asynchrone `asyncpg`
-DATABASE_URL = raw_db_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+if raw_db_url and raw_db_url.startswith("postgresql://"):
+    DATABASE_URL = raw_db_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+else:
+    DATABASE_URL = raw_db_url
 logger.info(f"Final DB URL (first 20 chars): {DATABASE_URL[:20]}...")
  
-# Si on est dans un environnement de production (comme HF Spaces) qui utilise un pooler (pgbouncer),
-# il faut désactiver le cache des "prepared statements" pour éviter les erreurs.
-# La présence de la variable d'environnement est un bon indicateur.
-connect_args = {"statement_cache_size": 0} if env_db_url else {}
+is_production_env = os.getenv("SPACE_ID") is not None or env_db_url is not None
 
-engine = create_async_engine(DATABASE_URL, connect_args=connect_args)
+engine_args = {}
+if is_production_env:
+    logger.info("Production environment detected. Applying PgBouncer compatibility settings.")
+    engine_args["connect_args"] = {
+        "statement_cache_size": 0,
+        "prepared_statement_cache_size": 0,
+        "server_settings": {
+            "jit": "off"
+        }
+    }
+
+engine = create_async_engine(DATABASE_URL, **engine_args)
 SessionLocal = async_sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 

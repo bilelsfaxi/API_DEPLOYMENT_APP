@@ -116,7 +116,8 @@ def seed_reference_videos():
     for filename in os.listdir(STATIC_VIDEOS_DIR):
         if filename.endswith(".mp4"):
             try:
-                normalized_filename = " ".join(filename.strip().split()).replace(" ", "_")
+                # Normalise le nom du fichier (supprime espaces superflus, remplace par '_')
+                normalized_filename = "_".join(filename.strip().split())
                 base_name = normalized_filename.removesuffix('.mp4').strip()
                 posture_part = base_name.rsplit('_', 1)[0].strip()
                 posture_name = posture_part.replace("chien_", "").replace("chiens_", "").strip()

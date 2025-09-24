@@ -22,14 +22,22 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 
 from api.models import Base
 
-# Récupérer l'URL de la base de données depuis la variable d'environnement si elle existe,
-# sinon depuis alembic.ini. C'est crucial pour la production.
+# Récupère l'URL de la base de données depuis les secrets (en production)
+# ou utilise une URL locale par défaut (en développement).
 env_db_url = os.getenv("DATABASE_URL")
 if env_db_url:
-    # Assurer le bon driver pour l'async
-    config.set_main_option("sqlalchemy.url", env_db_url.replace("postgresql://", "postgresql+asyncpg://", 1))
+    raw_db_url = env_db_url
+else:
+    raw_db_url = config.get_main_option("sqlalchemy.url") or "postgresql://postgres:bilelsf2001@localhost:5432/dog_posture_db"
 
-DATABASE_URL = config.get_main_option("sqlalchemy.url") # type: ignore
+# Assure que l'URL utilise le driver asynchrone `asyncpg`
+if raw_db_url and raw_db_url.startswith("postgresql://"):
+    DATABASE_URL = raw_db_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+else:
+    DATABASE_URL = raw_db_url
+
+# Mettre à jour la configuration pour que le reste du script l'utilise
+config.set_main_option("sqlalchemy.url", DATABASE_URL or "")
 
 # Set the target metadata for 'autogenerate' support
 target_metadata = Base.metadata
@@ -53,7 +61,7 @@ def run_migrations_offline() -> None:
 
     """
     context.configure(
-        url=DATABASE_URL,
+        url=config.get_main_option("sqlalchemy.url"),
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
@@ -77,13 +85,26 @@ async def run_migrations_online() -> None:
     and associate a connection with the context.
 
     """
-    # Si on utilise un pooler (pgbouncer) comme sur HF Spaces,
-    # il faut désactiver le cache des "prepared statements".
-    # La présence de la variable d'environnement est un bon indicateur.
-    is_production_env = os.getenv("DATABASE_URL") is not None
-    connect_args = {"statement_cache_size": 0} if is_production_env else {}
+    db_url = config.get_main_option("sqlalchemy.url")
+    if not db_url:
+        raise ValueError("Database URL is not configured in alembic.ini or DATABASE_URL env var.")
+        
+    is_production_env = os.getenv("SPACE_ID") is not None or os.getenv("DATABASE_URL") is not None
 
-    connectable = create_async_engine(DATABASE_URL, connect_args=connect_args)
+    engine_args = {}
+    if is_production_env:
+        engine_args["connect_args"] = {
+            "statement_cache_size": 0,
+            "prepared_statement_cache_size": 0,
+            "server_settings": {
+                "jit": "off"
+            }
+        }
+
+    connectable = create_async_engine(
+        db_url,
+        **engine_args
+    )
 
     async with connectable.connect() as connection:
         await connection.run_sync(do_run_migrations)
