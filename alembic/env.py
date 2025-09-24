@@ -22,8 +22,14 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 
 from api.models import Base
 
-# Récupérer l'URL de la base de données depuis alembic.ini
-DATABASE_URL = config.get_main_option("sqlalchemy.url")
+# Récupérer l'URL de la base de données depuis la variable d'environnement si elle existe,
+# sinon depuis alembic.ini. C'est crucial pour la production.
+env_db_url = os.getenv("DATABASE_URL")
+if env_db_url:
+    # Assurer le bon driver pour l'async
+    config.set_main_option("sqlalchemy.url", env_db_url.replace("postgresql://", "postgresql+asyncpg://", 1))
+
+DATABASE_URL = config.get_main_option("sqlalchemy.url") # type: ignore
 
 # Set the target metadata for 'autogenerate' support
 target_metadata = Base.metadata
@@ -71,7 +77,13 @@ async def run_migrations_online() -> None:
     and associate a connection with the context.
 
     """
-    connectable = create_async_engine(DATABASE_URL)
+    # Si on utilise un pooler (pgbouncer) comme sur HF Spaces,
+    # il faut désactiver le cache des "prepared statements".
+    # La présence de la variable d'environnement est un bon indicateur.
+    is_production_env = os.getenv("DATABASE_URL") is not None
+    connect_args = {"statement_cache_size": 0} if is_production_env else {}
+
+    connectable = create_async_engine(DATABASE_URL, connect_args=connect_args)
 
     async with connectable.connect() as connection:
         await connection.run_sync(do_run_migrations)

@@ -10,6 +10,8 @@ from typing import Sequence, Union
 from pgvector.sqlalchemy import VECTOR
 from alembic import op
 import sqlalchemy as sa
+import os
+import logging
 from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
@@ -17,6 +19,8 @@ revision: str = 'a1766463d8d4'
 down_revision: Union[str, Sequence[str], None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
+
+logger = logging.getLogger(f"alembic.revision.{revision}")
 
 
 def upgrade() -> None:
@@ -86,6 +90,45 @@ def upgrade() -> None:
     # 4. Ajouter les contraintes de clé étrangère maintenant que toutes les tables et colonnes sont en place
     op.create_foreign_key('fk_validated_postures_dog_id', 'validated_postures', 'dogs', ['dog_id'], ['id'])
     op.create_foreign_key('fk_pdr_video_id', 'posture_detection_results', 'reference_posture_videos', ['video_id'], ['id'])
+
+    # 5. Seeding des données de référence
+    seed_reference_videos()
+
+
+def seed_reference_videos():
+    """
+    Remplit la table reference_posture_videos avec les vidéos du dossier static/videos.
+    Cette fonction est conçue pour être appelée depuis une migration Alembic.
+    """
+    # Définition de la table pour l'insertion de données brutes (bulk insert)
+    ref_videos_table = sa.table('reference_posture_videos',
+        sa.column('posture', sa.String),
+        sa.column('video_path', sa.Text)
+    )
+
+    # Le chemin est relatif à la racine du projet où alembic est exécuté
+    STATIC_VIDEOS_DIR = "static/videos"
+    if not os.path.isdir(STATIC_VIDEOS_DIR):
+        logger.warning(f"Le dossier des vidéos de référence '{STATIC_VIDEOS_DIR}' n'a pas été trouvé. Le seeding est ignoré.")
+        return
+
+    videos_to_insert = []
+    for filename in os.listdir(STATIC_VIDEOS_DIR):
+        if filename.endswith(".mp4"):
+            try:
+                normalized_filename = " ".join(filename.strip().split()).replace(" ", "_")
+                base_name = normalized_filename.removesuffix('.mp4').strip()
+                posture_part = base_name.rsplit('_', 1)[0].strip()
+                posture_name = posture_part.replace("chien_", "").replace("chiens_", "").strip()
+                
+                video_path = f"static/videos/{normalized_filename}"
+                videos_to_insert.append({'posture': posture_name, 'video_path': video_path})
+            except (ValueError, IndexError):
+                logger.warning(f"Impossible de traiter le fichier vidéo '{filename}'. Le nom ne correspond pas au format attendu.")
+
+    if videos_to_insert:
+        op.bulk_insert(ref_videos_table, videos_to_insert)
+        logger.info(f"{len(videos_to_insert)} vidéos de référence insérées dans la base de données.")
 
 
 def downgrade() -> None:
