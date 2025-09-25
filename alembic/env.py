@@ -2,6 +2,7 @@ import asyncio
 from logging.config import fileConfig
 import os
 import sys
+import logging
 
 from sqlalchemy.ext.asyncio import create_async_engine
 
@@ -16,6 +17,8 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
+logger = logging.getLogger(__name__)
+
 # Add the project root to the Python path
 # This allows Alembic to find the `api` module
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -26,18 +29,24 @@ from api.models import Base
 # ou utilise une URL locale par défaut (en développement).
 env_db_url = os.getenv("DATABASE_URL")
 if env_db_url:
+    logger.info("Alembic: DATABASE_URL environment variable found.")
     raw_db_url = env_db_url
 else:
+    logger.warning("Alembic: DATABASE_URL environment variable NOT found. Falling back to local DB or alembic.ini.")
     raw_db_url = config.get_main_option("sqlalchemy.url") or "postgresql://postgres:bilelsf2001@localhost:5432/dog_posture_db"
+
+logger.info(f"Alembic: Raw DB URL (first 20 chars): {raw_db_url[:20]}...")
 
 # Assure que l'URL utilise le driver asynchrone `asyncpg`
 if raw_db_url and raw_db_url.startswith("postgresql://"):
     DATABASE_URL = raw_db_url.replace("postgresql://", "postgresql+asyncpg://", 1)
 else:
     DATABASE_URL = raw_db_url
+logger.info(f"Alembic: Final DB URL (first 20 chars): {DATABASE_URL[:20]}...")
 
 # Mettre à jour la configuration pour que le reste du script l'utilise
 config.set_main_option("sqlalchemy.url", DATABASE_URL or "")
+
 
 # Set the target metadata for 'autogenerate' support
 target_metadata = Base.metadata
@@ -88,11 +97,14 @@ async def run_migrations_online() -> None:
     db_url = config.get_main_option("sqlalchemy.url")
     if not db_url:
         raise ValueError("Database URL is not configured in alembic.ini or DATABASE_URL env var.")
-        
+    # Crée l'engine. Si on utilise un pooler (pgbouncer) comme sur HF Spaces,
+    # il faut désactiver le cache des "prepared statements".
+    # La présence de la variable d'environnement est un bon indicateur.
     is_production_env = os.getenv("SPACE_ID") is not None or os.getenv("DATABASE_URL") is not None
 
     engine_args = {}
     if is_production_env:
+        logger.info("Alembic: Production environment detected. Applying PgBouncer compatibility settings.")
         engine_args["connect_args"] = {
             "statement_cache_size": 0,
             "prepared_statement_cache_size": 0,

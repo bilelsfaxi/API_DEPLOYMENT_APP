@@ -25,12 +25,13 @@ app = FastAPI(title="YOLOv11 Dog Posture Detection API")
 
 # Monter le répertoire statique pour servir les vidéos de référence et le CSS
 # Le chemin du dossier 'static' est relatif à la racine du projet, pas au dossier 'api'.
-# On utilise os.path.join pour construire un chemin absolu ou relatif fiable.
-static_dir = os.path.join(os.path.dirname(__file__), "..", "static")
+static_dir = "static"
 app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
-# Configuration des templates HTML (Jinja2)
-templates = Jinja2Templates(directory="api/templates")
+# Configuration des templates HTML (Jinja2) - Le chemin est maintenant géré dans le routeur UI
+# pour une meilleure modularité.
+api_root = os.path.dirname(os.path.abspath(__file__))
+templates_dir = os.path.join(api_root, "routers")
 
 # Chemin absolu vers le modèle YOLOv11
 MODEL_PATH = os.path.join(os.path.dirname(__file__), "models", "final_model_yolo11.pt")
@@ -48,13 +49,13 @@ app.include_router(routers_yolo11.router)
 app.include_router(db_router.router)
 
 # Enregistrement des routes du routeur de l'interface utilisateur
-app.include_router(ui_router.router)
+app.include_router(ui_router.create_router(templates_directory=templates_dir))
 
 @app.on_event("startup")
 async def startup_event():
     """Code exécuté au démarrage de l'application."""
-    # Le seeding est maintenant géré par Alembic.
-    # On peut ajouter ici d'autres vérifications rapides si nécessaire.
+    # Le seeding des données de référence est maintenant géré par la migration Alembic.
+    # Cette fonction est maintenant beaucoup plus rapide.
     logger.info("✅ Application démarrée avec succès.")
 
 @app.get("/", response_class=RedirectResponse, include_in_schema=False)

@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Session UI</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 p-4">
+    <div class="container mx-auto">
+        <h1 class="text-2xl font-bold mb-4">Session {{ session_id }}: {{ posture.value }}</h1>
+        
+        <div class="grid grid-cols-2 gap-4 mb-4">
+            {% for video in videos %}
+            <div>
+                <h3 class="text-lg font-semibold">Reference Video {{ video.id }}</h3>
+                <video id="ref-video-{{ video.id }}" class="w-full h-64" controls loop>
+                    <source src="/{{ video.video_path }}" type="video/mp4">
+                    Your browser does not support the video tag.
+                </video>
+            </div>
+            {% endfor %}
+        </div>
+        
+        <div class="mb-4">
+            <h2 class="text-xl font-semibold">Webcam Stream</h2>
+            <div class="relative bg-black w-full h-96">
+                <img id="webcam-stream" class="w-full h-full object-contain" alt="Webcam stream will appear here">
+            </div>
+            <button onclick="startStreaming()" class="mt-2 bg-green-500 text-white p-2 rounded">Start Streaming</button>
+            <button onclick="stopStreaming()" class="mt-2 bg-red-500 text-white p-2 rounded">Stop Streaming</button>
+            <button id="validate-btn" onclick="validateCurrentPosture()" class="mt-2 bg-blue-500 text-white p-2 rounded" disabled>Valider la posture</button>
+        </div>
+        
+        <div class="mb-4">
+            <h2 class="text-xl font-semibold">Session Status</h2>
+            <p id="status">Successful Attempts: <span id="success-count">0</span></p>
+            <p id="posture-status">Posture Validated: <span id="validated">No</span></p>
+        </div>
+
+        <!-- Section pour démarrer une nouvelle session, initialement cachée -->
+        <div id="new-session-controls" class="hidden mt-6 p-4 border-t border-gray-300 bg-green-50 rounded-lg">
+            <h2 class="text-xl font-semibold text-green-800">Session Complétée !</h2>
+            <p class="mb-3 text-gray-700">Vous pouvez maintenant démarrer une nouvelle session pour une autre posture.</p>
+            <form action="/ui/create-new-session" method="POST" class="flex items-center space-x-4">
+                <input type="hidden" name="dog_id" value="{{ dog_id }}">
+                <select name="posture" id="new-posture-select" class="p-2 border rounded-md">
+                    {% for p in all_postures %}
+                        <option value="{{ p }}">{{ p.replace('_', ' ').title() }}</option>
+                    {% endfor %}
+                </select>
+                <button type="submit" class="bg-blue-600 text-white p-2 rounded-md hover:bg-blue-700">Démarrer une nouvelle session</button>
+            </form>
+        </div>
+
+        <div class="mb-4">
+            <h2 class="text-xl font-semibold">Upload Image/Video</h2>
+            <input type="file" id="media-upload" accept="image/*,video/*">
+            <button onclick="uploadMedia()" class="bg-blue-500 text-white p-2 rounded">Upload</button>
+        </div>
+
+        <script>
+            const sessionId = "{{ session_id }}";
+            const dogId = "{{ dog_id }}";
+            const statusElement = document.getElementById('status');
+            const successCountElement = document.getElementById('success-count');
+            const validatedElement = document.getElementById('validated');
+
+            let currentVideoIndex = 0;
+            let videoList = {{ videos | tojson | safe }};
+            let ws;
+            let sessionCompletedNotified = false; // Flag pour ne notifier qu'une fois
+
+            async function fetchVideos() {
+                const response = await fetch(`/db/sessions/${sessionId}/next_videos`);
+                if (response.ok) {
+                    videoList = await response.json();
+                    // Idéalement, ici, vous devriez aussi mettre à jour le DOM
+                    // pour afficher les nouvelles vidéos si elles changent.
+                }
+            }
+
+            async function updateStatus() {
+                const response = await fetch(`/db/sessions/${sessionId}/status`);
+                const status = await response.json();
+                document.getElementById('success-count').innerText = status.successful_attempts;
+                document.getElementById('validated').innerText = status.success_detected ? 'Yes' : 'No';
+
+                // Si la session est terminée
+                if (status.success_detected) { 
+                    // Affiche le panneau pour créer une nouvelle session
+                    document.getElementById('new-session-controls').classList.remove('hidden');
+
+                    // Si on n'a pas encore notifié l'utilisateur, on le fait et on arrête le stream.
+                    if (!sessionCompletedNotified) {
+                        sessionCompletedNotified = true; // On met le flag à jour
+                        alert('Posture validated! Session complete.');
+                        if (ws) {
+                            stopStreaming(); // Arrête le streaming
+                        }
+                    }
+                }
+            }
+
+            async function uploadMedia() {
+                const fileInput = document.getElementById('media-upload');
+                const file = fileInput.files[0];
+                if (!file) {
+                    alert("Please select a file to upload.");
+                    return;
+                }
+                
+                const formData = new FormData();
+                formData.append('file', file);
+
+                if (currentVideoIndex >= videoList.length) {
+                    alert("No more videos available for this attempt.");
+                    return;
+                }
+                const currentVideoId = videoList[currentVideoIndex].id;
+
+                const endpoint = file.type.startsWith('image/') 
+                    ? `/yolo/predict?session_id=${sessionId}&video_id=${currentVideoId}&output_format=json` 
+                    : `/yolo/predict-video?session_id=${sessionId}&video_id=${currentVideoId}`;
+                
+                try {
+                    const response = await fetch(endpoint, {
+                        method: 'POST',
+                        body: formData
+                    });
+                    
+                    if (response.ok) {
+                        alert("Upload successful!");
+                        currentVideoIndex = (currentVideoIndex + 1) % videoList.length;
+                        await updateStatus();
+                        await fetchVideos(); // Refresh video list for next attempts
+                    } else {
+                        const error = await response.json();
+                        alert(`Upload failed: ${error.detail || response.statusText}`);
+                    }
+                } catch (error) {
+                    alert(`An error occurred: ${error.message}`);
+                }
+            }
+
+            function handleWebSocketMessage(event) {
+                const data = JSON.parse(event.data);
+                const stream = document.getElementById('webcam-stream'); // C'est maintenant une balise <img>
+                stream.src = `data:image/jpeg;base64,${data.frame}`;
+                if (data.detections.length > 0 && data.detections[0].result === 'success') {
+                    console.log("Success detected on stream, advancing to next video.");
+                    currentVideoIndex = (currentVideoIndex + 1) % videoList.length;
+                    updateStatus();
+                    fetchVideos();
+                }
+            }
+
+            function connectWebSocket() {
+                if (ws) {
+                    ws.close();
+                }
+                // La connexion WebSocket n'a plus besoin de video_id car elle ne crée plus de tentatives
+                ws = new WebSocket(`ws://localhost:8000/yolo/ws/${sessionId}/0`); // 0 est un placeholder
+                ws.onmessage = handleWebSocketMessage;
+                ws.onerror = (event) => console.error("WebSocket error:", event);
+                ws.onclose = () => console.log("WebSocket connection closed.");
+            }
+
+            async function startStreaming() {
+                const response = await fetch('/yolo/start-stream', { method: 'POST' });
+                const data = await response.json();
+                alert(data.message);
+                if (response.ok) {
+                    // Une fois le stream démarré côté serveur, on se connecte au WebSocket
+                    document.getElementById('validate-btn').disabled = false;
+                    connectWebSocket();
+                }
+            }
+
+            async function stopStreaming() {
+                const response = await fetch('/yolo/stop-stream', { method: 'POST' });
+                const data = await response.json();
+                alert(data.message);
+                if (ws) {
+                    // On ferme la connexion WebSocket côté client
+                    ws.close();
+                    document.getElementById('validate-btn').disabled = true;
+                }
+            }
+
+            async function validateCurrentPosture() {
+                if (currentVideoIndex >= videoList.length) {
+                    alert("No more videos available for this attempt.");
+                    return;
+                }
+                const currentVideoId = videoList[currentVideoIndex].id;
+                const response = await fetch(`/yolo/validate-posture?session_id=${sessionId}&video_id=${currentVideoId}`, { method: 'POST' });
+                const data = await response.json();
+                if (response.ok) {
+                    alert(data.message);
+                    currentVideoIndex = (currentVideoIndex + 1) % videoList.length;
+                    await updateStatus();
+                    await fetchVideos(); // Refresh video list for next attempts
+                } else {
+                    alert(`Validation failed: ${data.detail}`);
+                }
+            }
+
+            // Initial calls
+            updateStatus(); // Initial status check
+            setInterval(updateStatus, 5000); // Periodically check status
+        </script>
+    </body>
+</html>

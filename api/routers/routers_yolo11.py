@@ -152,7 +152,7 @@ async def stop_stream():
     return JSONResponse(content={"message": "Déjà arrêté"})
 
 @router.websocket("/ws/{session_id}/{video_id}")
-async def stream_video(websocket: WebSocket, session_id: int, video_id: int, db: AsyncSession = Depends(database.get_db)):
+async def stream_video(websocket: WebSocket, session_id: int, video_id: int):
     global video_source, streaming_active
     await websocket.accept()
     if not streaming_active or not video_source or not video_source.isOpened():
@@ -172,18 +172,6 @@ async def stream_video(websocket: WebSocket, session_id: int, video_id: int, db:
             for det in detections:
                 confidences.append(det["confidence"])
             
-            if detections:
-                avg_confidence = sum(confidences) / len(confidences) if confidences else 0.0
-                attempt = schemas.PostureAttemptCreate(
-                    session_id=session_id,
-                    video_id=video_id,
-                    confidence=avg_confidence,
-                    result=detections[0]["result"],
-                    prediction_time=metrics["prediction_time"],
-                    frames_processed=metrics["frames_processed"]
-                )
-                await crud.create_posture_attempt(db, attempt)
-
             _, buffer = cv2.imencode('.jpg', frame)
             frame_base64 = base64.b64encode(buffer).decode('utf-8')
             await websocket.send_json({"frame": frame_base64, "detections": detections})
@@ -194,6 +182,41 @@ async def stream_video(websocket: WebSocket, session_id: int, video_id: int, db:
         print(f"WebSocket stream: {frame_count} frames, {prediction_time:.2f}s, avg confidence: {avg_confidence:.2f}")
 
     except WebSocketDisconnect:
-        pass
+        logging.info("Client disconnected from WebSocket.")
+    except Exception as e:
+        logging.error(f"An error occurred in the WebSocket stream: {e}")
     finally:
-        await websocket.close()
+        # La connexion est gérée par le contexte de FastAPI, pas besoin de fermer ici.
+        logging.info("WebSocket stream loop ended.")
+
+@router.post("/validate-posture")
+async def validate_posture(
+    session_id: int = Query(...),
+    video_id: int = Query(...),
+    db: AsyncSession = Depends(database.get_db)
+):
+    global video_source, streaming_active
+    if not streaming_active or not video_source or not video_source.isOpened():
+        raise HTTPException(status_code=400, detail="Streaming is not active.")
+
+    ret, frame = video_source.read()
+    if not ret:
+        raise HTTPException(status_code=500, detail="Failed to capture frame from webcam.")
+
+    detections, metrics = detector.process_image(frame)
+
+    if not detections:
+        return JSONResponse(status_code=400, content={"message": "No posture detected in the current frame."})
+
+    first_detection = detections[0]
+    attempt = schemas.PostureAttemptCreate(
+        session_id=session_id,
+        video_id=video_id,
+        confidence=first_detection["confidence"],
+        result=first_detection["result"],
+        prediction_time=metrics["prediction_time"],
+        frames_processed=1
+    )
+    await crud.create_posture_attempt(db, attempt)
+
+    return JSONResponse(content={"message": f"Attempt recorded with result: {first_detection['result']}"})
