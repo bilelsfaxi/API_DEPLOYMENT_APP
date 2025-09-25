@@ -1,3 +1,12 @@
+---
+title: API Détection Postures Chiens
+emoji: 🐶
+colorFrom: blue
+colorTo: green
+sdk: docker
+app_port: 8000
+pinned: false
+---
 # 🐶 API de Détection de Postures de Chiens avec YOLOv11
 
 Une API RESTful basée sur **FastAPI** pour détecter les **postures de chiens** (assis, debout, couché, etc.) dans des images, vidéos ou flux webcam, à l’aide d’un modèle **YOLOv11** pré-entraîné.
