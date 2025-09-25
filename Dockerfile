@@ -22,8 +22,7 @@ RUN pip install --no-cache-dir --upgrade pip && \
 
 # Étape 6 : Copier le code source de l’API et les templates
 COPY api/ api/
-COPY templates/ templates/
-COPY uploads/ uploads/
+COPY static/ static/
 
 # Étape 7 : Créer le dossier uploads s'il n'existe pas
 RUN mkdir -p /app/uploads
