@@ -16,12 +16,16 @@ uploads/*
 temp_results/*
 !temp_results/.gitkeep
 
+# Ignorer les fichiers vidéo, SAUF ceux dans le dossier static/
 *.mp4
 *.avi
 *.mov
+!static/videos/*.mp4
 
 # Fichiers de modèle (peuvent être très volumineux)
+# Ignorer les fichiers de modèle, SAUF le modèle principal de l'application
 *.pt
+!api/models/final_model_yolo11.pt
 
 # Logs
 *.log
