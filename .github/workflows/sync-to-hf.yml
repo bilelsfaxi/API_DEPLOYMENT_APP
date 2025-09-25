@@ -13,15 +13,22 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0 # Nécessaire pour avoir l'historique complet
+          lfs: true      # Très important : télécharge les fichiers Git LFS
       
       - name: Push to Hugging Face Hub
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
+          # Installer Git LFS sur le runner pour qu'il puisse gérer les fichiers
+          git lfs install
+
           # Cloner le repo de destination (le Space HF)
           git clone "https://bilelsf:$HF_TOKEN@huggingface.co/spaces/bilelsf/API_DEPLOYMENT_APP" hf-space
           cd hf-space
           
+          # Activer LFS dans le repo cloné avant de copier les fichiers
+          git lfs install
+
           # Copier les fichiers du repo source vers le repo de destination
           rsync -av --delete --exclude='.git/' --exclude='hf-space/' ../ ./
           
@@ -31,4 +38,4 @@ jobs:
           git add .
           # Ne commiter que s'il y a des changements
           git diff --staged --quiet || git commit -m "Sync from GitHub"
-          git push origin main
+          git push origin main # Le push va maintenant téléverser les fichiers LFS vers le Space
