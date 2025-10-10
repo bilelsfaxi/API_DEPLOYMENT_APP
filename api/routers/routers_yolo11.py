@@ -113,7 +113,7 @@ async def predict_video(
                 session_id=session_id,
                 video_id=video_id,
                 confidence=result["avg_confidence"],
-                result=result["detections"][0]["result"],
+                result=result["detections"][0]["class_name"], # Utiliser class_name comme résultat
                 prediction_time=result["prediction_time"],
                 frames_processed=result["frames_processed"]
             )
