@@ -3,7 +3,9 @@ name: Sync to Hugging Face Space
 on:
   workflow_dispatch: # Permet un déclenchement manuel
   push: # Déclenchement automatique sur push
-    branches: [ "main" ]
+    branches: 
+      - main
+      - deploy-hugging
 
 jobs:
   sync-to-hub:
