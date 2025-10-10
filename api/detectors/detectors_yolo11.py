@@ -64,7 +64,7 @@ class YOLOv11Detector:
             "prediction_time": prediction_time,
             "avg_confidence": avg_confidence,
             "frames_processed": 1
-        }
+        }, annotated_image
 
     def process_video(self, video_path: str, output_path: str = None) -> dict:
         start_time = time.time()

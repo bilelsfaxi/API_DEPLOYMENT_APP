@@ -36,7 +36,10 @@ async def predict(
         image = Image.open(BytesIO(contents)).convert("RGB")
         image_np = np.array(image)
 
-        detections, metrics = detector.process_image(image_np)
+        # On appelle process_image une seule fois et on lui demande de préparer une image annotée
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as temp_output:
+            temp_output_path = temp_output.name
+        detections, metrics, annotated_image_np = detector.process_image(image_np, output_path=temp_output_path)
         
         if detections:
             # Nous prenons la première détection comme la principale pour cette tentative
@@ -52,12 +55,9 @@ async def predict(
             await crud.create_posture_attempt(db, attempt)
 
         if output_format == OutputFormat.IMAGE:
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as temp_output:
-                temp_output_path = temp_output.name
-                detector.process_image(image_np, temp_output_path)
-            with open(temp_output_path, "rb") as annotated_file:
-                encoded_image = annotated_file.read()
+            _, buffer = cv2.imencode('.jpg', annotated_image_np)
             os.remove(temp_output_path)
+            encoded_image = buffer.tobytes()
             return Response(content=encoded_image, media_type="image/jpeg")
         
         elif output_format == OutputFormat.JSON:
