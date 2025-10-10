@@ -36,28 +36,26 @@ async def predict(
         image = Image.open(BytesIO(contents)).convert("RGB")
         image_np = np.array(image)
 
-        # On appelle process_image une seule fois et on lui demande de préparer une image annotée
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as temp_output:
-            temp_output_path = temp_output.name
-        detections, metrics, annotated_image_np = detector.process_image(image_np, output_path=temp_output_path)
+        detections, metrics = detector.process_image(image_np)
         
         if detections:
-            # Nous prenons la première détection comme la principale pour cette tentative
-            first_detection = detections[0] 
             attempt = schemas.PostureAttemptCreate(
                 session_id=session_id,
                 video_id=video_id,
-                confidence=first_detection["confidence"], # Utilise la confiance de la première détection
-                detected_posture_name=first_detection["class_name"], # Passe le nom de la classe détectée
+                confidence=metrics["avg_confidence"],
+                result=detections[0]["result"],
                 prediction_time=metrics["prediction_time"],
                 frames_processed=metrics["frames_processed"]
             )
             await crud.create_posture_attempt(db, attempt)
 
         if output_format == OutputFormat.IMAGE:
-            _, buffer = cv2.imencode('.jpg', annotated_image_np)
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as temp_output:
+                temp_output_path = temp_output.name
+                detector.process_image(image_np, temp_output_path)
+            with open(temp_output_path, "rb") as annotated_file:
+                encoded_image = annotated_file.read()
             os.remove(temp_output_path)
-            encoded_image = buffer.tobytes()
             return Response(content=encoded_image, media_type="image/jpeg")
         
         elif output_format == OutputFormat.JSON:
@@ -111,13 +109,11 @@ async def predict_video(
             result = detector.process_video(temp_input_path, temp_output_path)
 
         if result["detections"]:
-            # Nous prenons la première détection de la vidéo comme la principale pour cette tentative
-            first_detection_in_video = result["detections"][0]
             attempt = schemas.PostureAttemptCreate(
                 session_id=session_id,
                 video_id=video_id,
-                confidence=first_detection_in_video["confidence"],
-                detected_posture_name=first_detection_in_video["class_name"],
+                confidence=result["avg_confidence"],
+                result=result["detections"][0]["result"],
                 prediction_time=result["prediction_time"],
                 frames_processed=result["frames_processed"]
             )
@@ -216,11 +212,11 @@ async def validate_posture(
     attempt = schemas.PostureAttemptCreate(
         session_id=session_id,
         video_id=video_id,
-        confidence=first_detection["confidence"], # Utilise la confiance de la première détection
-        detected_posture_name=first_detection["class_name"], # Passe le nom de la classe détectée
+        confidence=first_detection["confidence"],
+        result=first_detection["result"],
         prediction_time=metrics["prediction_time"],
-        frames_processed=metrics["frames_processed"] # Devrait être 1 pour une image
+        frames_processed=1
     )
     await crud.create_posture_attempt(db, attempt)
 
-    return JSONResponse(content={"message": f"Attempt recorded for posture: {first_detection['class_name']}"})
+    return JSONResponse(content={"message": f"Attempt recorded with result: {first_detection['result']}"})

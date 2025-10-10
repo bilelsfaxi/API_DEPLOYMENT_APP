@@ -135,16 +135,8 @@
                         await updateStatus();
                         await fetchVideos(); // Refresh video list for next attempts
                     } else {
-                        // Gérer les erreurs de manière plus robuste
-                        let errorMessage = response.statusText;
-                        try {
-                            // Essayer de parser la réponse comme du JSON
-                            const errorData = await response.json();
-                            errorMessage = errorData.detail || errorMessage;
-                        } catch (e) {
-                            // Si ce n'est pas du JSON, utiliser le texte brut de la réponse
-                        }
-                        alert(`Upload failed: ${errorMessage}`);
+                        const error = await response.json();
+                        alert(`Upload failed: ${error.detail || response.statusText}`);
                     }
                 } catch (error) {
                     alert(`An error occurred: ${error.message}`);

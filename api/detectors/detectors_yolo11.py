@@ -64,7 +64,7 @@ class YOLOv11Detector:
             "prediction_time": prediction_time,
             "avg_confidence": avg_confidence,
             "frames_processed": 1
-        }, annotated_image
+        }
 
     def process_video(self, video_path: str, output_path: str = None) -> dict:
         start_time = time.time()
@@ -91,9 +91,7 @@ class YOLOv11Detector:
             if not ret:
                 break
             frame_count += 1
-            # On appelle process_image et on récupère les 3 valeurs retournées.
-            # On ignore les deux dernières (métriques et image annotée) avec `_`.
-            detections, _, _ = self.process_image(frame)
+            detections, _ = self.process_image(frame)
             for det in detections:
                 det['frame_number'] = frame_count
                 det['timestamp'] = frame_count / fps if fps > 0 else 0

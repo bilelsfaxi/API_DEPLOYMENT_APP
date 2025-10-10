@@ -90,23 +90,15 @@ async def create_posture_attempt(db: AsyncSession, attempt: schemas.db_schemas.P
     if not ref_video:
         raise HTTPException(status_code=404, detail=f"Reference video with id {attempt.video_id} not found")
     
-    # Déterminer le résultat final ('success' ou 'failure') basé sur la nouvelle logique
-    final_result = "failure"
-    # La détection est un succès si la confiance est > 0.5 ET la posture détectée
-    # correspond à la posture cible de la session.
-    if attempt.confidence > 0.5 and attempt.detected_posture_name == session.posture.value:
-        final_result = "success"
-    
-    # La vérification que la posture de la vidéo de référence correspond à celle de la session
-    # est une validation de configuration. Nous laissons le processus continuer pour évaluer
-    # la détection réelle du modèle par rapport à la posture de la session.
+    if ref_video.posture != session.posture:
+        raise HTTPException(status_code=400, detail=f"Video id {attempt.video_id} (posture: {ref_video.posture}) does not match session posture ({session.posture})")
     
     db_attempt = models.PostureDetectionResult(
         session_id=attempt.session_id,
         video_id=attempt.video_id,
-        posture=session.posture, # C'est la posture cible de la session
+        posture=session.posture,
         confidence=attempt.confidence,
-        result=final_result, # Le résultat est maintenant déterminé par la nouvelle logique
+        result=attempt.result,
         timestamp=datetime.now(timezone.utc),
         prediction_time=attempt.prediction_time,
         frames_processed=attempt.frames_processed
