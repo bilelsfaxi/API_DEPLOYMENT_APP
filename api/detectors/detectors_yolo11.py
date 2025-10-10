@@ -91,7 +91,9 @@ class YOLOv11Detector:
             if not ret:
                 break
             frame_count += 1
-            detections, _ = self.process_image(frame)
+            # On appelle process_image et on récupère les 3 valeurs retournées.
+            # On ignore les deux dernières (métriques et image annotée) avec `_`.
+            detections, _, _ = self.process_image(frame)
             for det in detections:
                 det['frame_number'] = frame_count
                 det['timestamp'] = frame_count / fps if fps > 0 else 0
