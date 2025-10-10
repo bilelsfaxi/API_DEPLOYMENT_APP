@@ -37,13 +37,11 @@ class YOLOv11Detector:
                     confidence = float(box.conf[0])
                     class_id = int(box.cls[0])
                     class_name = self.classes[class_id]
-                    result = "success" if confidence > 0.5 else "failure"
 
                     detections.append({
                         "class_name": class_name,
                         "confidence": confidence,
-                        "bbox": [float(x1), float(y1), float(x2), float(y2)],
-                        "result": result
+                        "bbox": [float(x1), float(y1), float(x2), float(y2)]
                     })
                     confidences.append(confidence)
 

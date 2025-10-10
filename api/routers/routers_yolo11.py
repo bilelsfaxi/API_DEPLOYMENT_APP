@@ -223,4 +223,4 @@ async def validate_posture(
     )
     await crud.create_posture_attempt(db, attempt)
 
-    return JSONResponse(content={"message": f"Attempt recorded with result: {first_detection['result']}"})
+    return JSONResponse(content={"message": f"Attempt recorded for posture: {first_detection['class_name']}"})

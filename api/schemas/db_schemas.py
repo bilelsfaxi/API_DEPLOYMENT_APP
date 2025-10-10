@@ -35,7 +35,7 @@ class PostureAttemptCreate(BaseModel):
     session_id: int
     video_id: int
     confidence: float
-    result: str
+    detected_posture_name: str
     prediction_time: float
     frames_processed: int
 
