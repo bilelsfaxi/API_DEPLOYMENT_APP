@@ -8,7 +8,14 @@ import time
 import torch
 
 class YOLOv11Detector:
+    """Classe pour la détection de postures de chiens avec YOLOv11."""
     def __init__(self, model_path: str = os.path.join(os.path.dirname(__file__), "..", "models", "final_model_yolo11.pt")):
+        """
+        Initialise le détecteur YOLOv11.
+
+        Args:
+            model_path (str): Le chemin vers le fichier du modèle .pt.
+        """
         if not os.path.exists(model_path):
             raise FileNotFoundError(
                 f"Le modèle YOLOv11 n'a pas été trouvé à l'emplacement : {model_path}\n"
@@ -24,6 +31,16 @@ class YOLOv11Detector:
             raise RuntimeError(f"❌ Échec du chargement du modèle : {str(e)}")
 
     def process_image(self, image_np: np.ndarray, output_path: str = None) -> tuple:
+        """
+        Traite une image pour détecter les postures de chiens.
+
+        Args:
+            image_np (np.ndarray): L'image à traiter.
+            output_path (str, optional): Le chemin pour sauvegarder l'image annotée. Defaults to None.
+
+        Returns:
+            tuple: Un tuple contenant les détections et des métriques.
+        """
         start_time = time.time()
         results = self.model(image_np, conf=0.5)
         detections = []
@@ -37,13 +54,11 @@ class YOLOv11Detector:
                     confidence = float(box.conf[0])
                     class_id = int(box.cls[0])
                     class_name = self.classes[class_id]
-                    result = "success" if confidence > 0.5 else "failure"
 
                     detections.append({
                         "class_name": class_name,
                         "confidence": confidence,
                         "bbox": [float(x1), float(y1), float(x2), float(y2)],
-                        "result": result
                     })
                     confidences.append(confidence)
 
@@ -69,6 +84,16 @@ class YOLOv11Detector:
         }
 
     def process_video(self, video_path: str, output_path: str = None) -> dict:
+        """
+        Traite une vidéo pour détecter les postures de chiens.
+
+        Args:
+            video_path (str): Le chemin vers la vidéo à traiter.
+            output_path (str, optional): Le chemin pour sauvegarder la vidéo annotée. Defaults to None.
+
+        Returns:
+            dict: Un dictionnaire contenant les détections et des métriques sur la vidéo.
+        """
         start_time = time.time()
         cap = cv2.VideoCapture(video_path)
         if not cap.isOpened():
@@ -128,8 +153,18 @@ class YOLOv11Detector:
         }
 
     def save_detections_to_csv(self, detections: List[Dict], output_path: str) -> str:
+        """
+        Sauvegarde les détections dans un fichier CSV.
+
+        Args:
+            detections (List[Dict]): La liste des détections.
+            output_path (str): Le chemin pour sauvegarder le fichier CSV.
+
+        Returns:
+            str: Le chemin vers le fichier CSV sauvegardé.
+        """
         if not detections:
-            df = pd.DataFrame(columns=['class_name', 'confidence', 'x1', 'y1', 'x2', 'y2', 'frame_number', 'timestamp', 'result'])
+            df = pd.DataFrame(columns=['class_name', 'confidence', 'x1', 'y1', 'x2', 'y2', 'frame_number', 'timestamp'])
         else:
             csv_data = []
             for det in detections:
@@ -142,7 +177,6 @@ class YOLOv11Detector:
                     'y2': det['bbox'][3],
                     'frame_number': det.get('frame_number', 0),
                     'timestamp': det.get('timestamp', 0.0),
-                    'result': det.get('result', '')
                 }
                 csv_data.append(row)
             df = pd.DataFrame(csv_data)

@@ -39,11 +39,23 @@ async def predict(
         detections, metrics = detector.process_image(image_np)
         
         if detections:
+            session = await crud.get_session_by_id(db, session_id)
+            if not session:
+                raise HTTPException(status_code=404, detail=f"Session with id {session_id} not found")
+
+            first_detection = detections[0]
+            confidence = first_detection["confidence"]
+            class_name = first_detection["class_name"]
+            
+            target_posture = session.posture.value
+            
+            result = "success" if confidence > 0.5 and class_name == target_posture else "failure"
+
             attempt = schemas.PostureAttemptCreate(
                 session_id=session_id,
                 video_id=video_id,
-                confidence=metrics["avg_confidence"],
-                result=detections[0]["result"],
+                confidence=confidence,
+                result=result,
                 prediction_time=metrics["prediction_time"],
                 frames_processed=metrics["frames_processed"]
             )
@@ -106,18 +118,30 @@ async def predict_video(
 
         with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as temp_output:
             temp_output_path = temp_output.name
-            result = detector.process_video(temp_input_path, temp_output_path)
+            video_results = detector.process_video(temp_input_path, temp_output_path)
 
-        if result["detections"]:
+        if video_results["detections"]:
+            session = await crud.get_session_by_id(db, session_id)
+            if not session:
+                raise HTTPException(status_code=404, detail=f"Session with id {session_id} not found")
+
+            first_detection = video_results["detections"][0]
+            confidence = first_detection["confidence"]
+            class_name = first_detection["class_name"]
+
+            target_posture = session.posture.value
+            
+            result = "success" if confidence > 0.5 and class_name == target_posture else "failure"
+
             attempt = schemas.PostureAttemptCreate(
                 session_id=session_id,
                 video_id=video_id,
-                confidence=result["avg_confidence"],
-                result=result["detections"][0]["result"],
-                prediction_time=result["prediction_time"],
-                frames_processed=result["frames_processed"]
+                confidence=confidence,
+                result=result,
+                prediction_time=video_results["prediction_time"],
+                frames_processed=video_results["frames_processed"]
             )
-            await crud.create_posture_attempt(db, attempt) # On ne récupère pas le retour
+            await crud.create_posture_attempt(db, attempt)
 
         with open(temp_output_path, "rb") as output_file:
             encoded_video = output_file.read()
@@ -208,15 +232,26 @@ async def validate_posture(
     if not detections:
         return JSONResponse(status_code=400, content={"message": "No posture detected in the current frame."})
 
+    session = await crud.get_session_by_id(db, session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail=f"Session with id {session_id} not found")
+
     first_detection = detections[0]
+    confidence = first_detection["confidence"]
+    class_name = first_detection["class_name"]
+
+    target_posture = session.posture.value
+    
+    result = "success" if confidence > 0.5 and class_name == target_posture else "failure"
+
     attempt = schemas.PostureAttemptCreate(
         session_id=session_id,
         video_id=video_id,
-        confidence=first_detection["confidence"],
-        result=first_detection["result"],
+        confidence=confidence,
+        result=result,
         prediction_time=metrics["prediction_time"],
         frames_processed=1
     )
     await crud.create_posture_attempt(db, attempt)
 
-    return JSONResponse(content={"message": f"Attempt recorded with result: {first_detection['result']}"})
+    return JSONResponse(content={"message": f"Attempt recorded with result: {result}"})
