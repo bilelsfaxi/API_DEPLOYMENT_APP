@@ -31,17 +31,12 @@ async def predict(
     if not file.content_type.startswith("image/"):
         raise HTTPException(status_code=400, detail="File must be an image")
 
-    # Récupérer la session pour connaître la posture attendue
-    session = await crud.get_session_by_id(db, session_id)
-    if not session:
-        raise HTTPException(status_code=404, detail=f"Session with id {session_id} not found")
-
     try:
         contents = await file.read()
         image = Image.open(BytesIO(contents)).convert("RGB")
         image_np = np.array(image)
 
-        detections, metrics = detector.process_image(image_np, expected_posture=session.posture.value)
+        detections, metrics = detector.process_image(image_np)
         
         if detections:
             attempt = schemas.PostureAttemptCreate(
@@ -57,7 +52,7 @@ async def predict(
         if output_format == OutputFormat.IMAGE:
             with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as temp_output:
                 temp_output_path = temp_output.name
-                detector.process_image(image_np, temp_output_path, expected_posture=session.posture.value)
+                detector.process_image(image_np, temp_output_path)
             with open(temp_output_path, "rb") as annotated_file:
                 encoded_image = annotated_file.read()
             os.remove(temp_output_path)
@@ -103,18 +98,15 @@ async def predict_video(
     if not file.content_type.startswith("video/"):
         raise HTTPException(status_code=400, detail="File must be a video")
 
-    # Récupérer la session pour connaître la posture attendue
-    session = await crud.get_session_by_id(db, session_id)
-    if not session:
-        raise HTTPException(status_code=404, detail=f"Session with id {session_id} not found")
-
     try:
         contents = await file.read()
         with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as temp_input:
             temp_input.write(contents)
             temp_input_path = temp_input.name
 
-        result = detector.process_video(temp_input_path, expected_posture=session.posture.value)
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as temp_output:
+            temp_output_path = temp_output.name
+            result = detector.process_video(temp_input_path, temp_output_path)
 
         if result["detections"]:
             attempt = schemas.PostureAttemptCreate(
@@ -127,21 +119,12 @@ async def predict_video(
             )
             await crud.create_posture_attempt(db, attempt) # On ne récupère pas le retour
 
-        # Pour la réponse, nous renvoyons une vidéo annotée.
-        # Nous devons la générer séparément car process_video ne le fait plus par défaut.
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as temp_output:
-            temp_output_path = temp_output.name
-            # On ré-appelle process_video mais cette fois avec un chemin de sortie
-            detector.process_video(temp_input_path, temp_output_path, expected_posture=session.posture.value)
-
-        try:
-            with open(temp_output_path, "rb") as output_file:
-                encoded_video = output_file.read()
-        finally:
-            os.remove(temp_output_path)
+        with open(temp_output_path, "rb") as output_file:
+            encoded_video = output_file.read()
 
         os.remove(temp_input_path)
-        
+        os.remove(temp_output_path)
+
         return Response(content=encoded_video, media_type="video/mp4")
 
     except Exception as e:
@@ -172,16 +155,10 @@ async def stop_stream():
 async def stream_video(websocket: WebSocket, session_id: int, video_id: int):
     global video_source, streaming_active
     await websocket.accept()
-
-    # On récupère la session une seule fois au début du WebSocket
-    db = next(database.get_db_sync()) # Utilise une session DB synchrone pour le WS
-    session = await crud.get_session_by_id(db, session_id)
-    await db.close()
-
     if not streaming_active or not video_source or not video_source.isOpened():
         await websocket.close()
         return
-    
+
     try:
         frame_count = 0
         confidences = []
@@ -191,7 +168,7 @@ async def stream_video(websocket: WebSocket, session_id: int, video_id: int):
             if not ret:
                 break
             frame_count += 1
-            detections, metrics = detector.process_image(frame, expected_posture=session.posture.value if session else None)
+            detections, metrics = detector.process_image(frame)
             for det in detections:
                 confidences.append(det["confidence"])
             
@@ -222,16 +199,11 @@ async def validate_posture(
     if not streaming_active or not video_source or not video_source.isOpened():
         raise HTTPException(status_code=400, detail="Streaming is not active.")
 
-    # Récupérer la session pour connaître la posture attendue
-    session = await crud.get_session_by_id(db, session_id)
-    if not session:
-        raise HTTPException(status_code=404, detail=f"Session with id {session_id} not found")
-
     ret, frame = video_source.read()
     if not ret:
         raise HTTPException(status_code=500, detail="Failed to capture frame from webcam.")
 
-    detections, metrics = detector.process_image(frame, expected_posture=session.posture.value)
+    detections, metrics = detector.process_image(frame)
 
     if not detections:
         return JSONResponse(status_code=400, content={"message": "No posture detected in the current frame."})

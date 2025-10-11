@@ -47,7 +47,3 @@ Base = declarative_base()
 async def get_db():
     async with SessionLocal() as session:
         yield session
-
-def get_db_sync():
-    """Fonction synchrone pour obtenir une session DB, utile pour les WebSockets."""
-    return SessionLocal()

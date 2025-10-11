@@ -23,7 +23,7 @@ class YOLOv11Detector:
         except Exception as e:
             raise RuntimeError(f"❌ Échec du chargement du modèle : {str(e)}")
 
-    def process_image(self, image_np: np.ndarray, output_path: str = None, expected_posture: Optional[str] = None) -> tuple:
+    def process_image(self, image_np: np.ndarray, output_path: str = None) -> tuple:
         start_time = time.time()
         results = self.model(image_np, conf=0.5)
         detections = []
@@ -37,12 +37,7 @@ class YOLOv11Detector:
                     confidence = float(box.conf[0])
                     class_id = int(box.cls[0])
                     class_name = self.classes[class_id]
-                    
-                    # Logique de succès améliorée
-                    is_confident = confidence > 0.8
-                    is_correct_posture = (expected_posture is None) or (class_name == expected_posture)
-                    
-                    result = "success" if is_confident and is_correct_posture else "failure"
+                    result = "success" if confidence > 0.5 else "failure"
 
                     detections.append({
                         "class_name": class_name,
@@ -73,7 +68,7 @@ class YOLOv11Detector:
             "frames_processed": 1
         }
 
-    def process_video(self, video_path: str, output_path: str = None, expected_posture: Optional[str] = None) -> dict:
+    def process_video(self, video_path: str, output_path: str = None) -> dict:
         start_time = time.time()
         cap = cv2.VideoCapture(video_path)
         if not cap.isOpened():
@@ -98,7 +93,7 @@ class YOLOv11Detector:
             if not ret:
                 break
             frame_count += 1
-            detections, _ = self.process_image(frame, expected_posture=expected_posture)
+            detections, _ = self.process_image(frame)
             for det in detections:
                 det['frame_number'] = frame_count
                 det['timestamp'] = frame_count / fps if fps > 0 else 0
