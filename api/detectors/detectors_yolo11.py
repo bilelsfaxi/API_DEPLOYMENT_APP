@@ -54,9 +54,14 @@ class YOLOv11Detector:
                     confidence = float(box.conf[0])
                     class_id = int(box.cls[0])
                     class_name = self.classes[class_id]
+                    
+                    # Normalisation du nom de la classe pour correspondre à l'Enum
+                    # "chien debout" -> "debout"
+                    # "chien a pieds" -> "a_pieds"
+                    normalized_class_name = class_name.replace("chien ", "").replace("chiens ", "").strip().replace(" ", "_")
 
                     detections.append({
-                        "class_name": class_name,
+                        "class_name": normalized_class_name,
                         "confidence": confidence,
                         "bbox": [float(x1), float(y1), float(x2), float(y2)],
                     })

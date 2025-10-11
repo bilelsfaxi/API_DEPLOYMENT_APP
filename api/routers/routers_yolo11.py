@@ -20,6 +20,19 @@ detector = None  # Le détecteur sera injecté depuis main.py
 video_source = None
 streaming_active = False
 
+CONFIDENCE_THRESHOLD = 0.5  # Seuil de confiance abaissé à 60%
+
+def get_validation_result(detection: dict, target_posture: str) -> str:
+    """
+    Détermine le résultat de la validation en fonction de la détection et de la posture cible.
+    """
+    if not detection:
+        return "failure"
+    
+    confidence = detection.get("confidence", 0)
+    class_name = detection.get("class_name", "")
+    return "success" if confidence > CONFIDENCE_THRESHOLD and class_name == target_posture else "failure"
+
 @router.post("/predict")
 async def predict(
     file: UploadFile = File(...),
@@ -44,17 +57,12 @@ async def predict(
                 raise HTTPException(status_code=404, detail=f"Session with id {session_id} not found")
 
             first_detection = detections[0]
-            confidence = first_detection["confidence"]
-            class_name = first_detection["class_name"]
-            
-            target_posture = session.posture.value
-            
-            result = "success" if confidence > 0.5 and class_name == target_posture else "failure"
+            result = get_validation_result(first_detection, session.posture.value)
 
             attempt = schemas.PostureAttemptCreate(
                 session_id=session_id,
                 video_id=video_id,
-                confidence=confidence,
+                confidence=first_detection.get("confidence", 0),
                 result=result,
                 prediction_time=metrics["prediction_time"],
                 frames_processed=metrics["frames_processed"]
@@ -126,17 +134,12 @@ async def predict_video(
                 raise HTTPException(status_code=404, detail=f"Session with id {session_id} not found")
 
             first_detection = video_results["detections"][0]
-            confidence = first_detection["confidence"]
-            class_name = first_detection["class_name"]
-
-            target_posture = session.posture.value
-            
-            result = "success" if confidence > 0.5 and class_name == target_posture else "failure"
+            result = get_validation_result(first_detection, session.posture.value)
 
             attempt = schemas.PostureAttemptCreate(
                 session_id=session_id,
                 video_id=video_id,
-                confidence=confidence,
+                confidence=first_detection.get("confidence", 0),
                 result=result,
                 prediction_time=video_results["prediction_time"],
                 frames_processed=video_results["frames_processed"]
@@ -237,17 +240,12 @@ async def validate_posture(
         raise HTTPException(status_code=404, detail=f"Session with id {session_id} not found")
 
     first_detection = detections[0]
-    confidence = first_detection["confidence"]
-    class_name = first_detection["class_name"]
-
-    target_posture = session.posture.value
-    
-    result = "success" if confidence > 0.5 and class_name == target_posture else "failure"
+    result = get_validation_result(first_detection, session.posture.value)
 
     attempt = schemas.PostureAttemptCreate(
         session_id=session_id,
         video_id=video_id,
-        confidence=confidence,
+        confidence=first_detection.get("confidence", 0),
         result=result,
         prediction_time=metrics["prediction_time"],
         frames_processed=1
