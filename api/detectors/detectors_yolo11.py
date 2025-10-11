@@ -39,7 +39,7 @@ class YOLOv11Detector:
                     class_name = self.classes[class_id]
                     
                     # Logique de succès améliorée
-                    is_confident = confidence > 0.5
+                    is_confident = confidence > 0.8
                     is_correct_posture = (expected_posture is None) or (class_name == expected_posture)
                     
                     result = "success" if is_confident and is_correct_posture else "failure"
